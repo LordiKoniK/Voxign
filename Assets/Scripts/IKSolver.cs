@@ -24,38 +24,31 @@ public class IKSolver : MonoBehaviour
         string[] leftFingers = { "leftIndex", "leftMiddle", "leftRing", "leftPinky" };
         string[] rightFingers = { "rightIndex", "rightMiddle", "rightRing", "rightPinky" };
 
-        // Left fingers (Positive X rotation) i.e. to curl the finger we rotate it towards x+ 
+        // Rotation constraints for each finger 
         foreach (string finger in leftFingers)
-        {
-            jointConstraints[$"{finger}1"] = new RotationConstraint(0f, 90f);
-            jointConstraints[$"{finger}2"] = new RotationConstraint(0f, 100f);
-            jointConstraints[$"{finger}3"] = new RotationConstraint(0f, 80f);
-        }
-        
-        // Right fingers (Negative X) [TO CONFIRM]
-        foreach (string finger in rightFingers)
         {
             jointConstraints[$"{finger}1"] = new RotationConstraint(-90f, 0f);
             jointConstraints[$"{finger}2"] = new RotationConstraint(-100f, 0f);
             jointConstraints[$"{finger}3"] = new RotationConstraint(-80f, 0f);
         }
+        jointConstraints["leftThumb1"] = new RotationConstraint(-60f, 0f);
+        jointConstraints["leftThumb2"] = new RotationConstraint(-60f, 0f);
+        jointConstraints["leftThumb3"] = new RotationConstraint(-90f, 0f);
 
-        // Thumbs
-        jointConstraints["leftThumb1"] = new RotationConstraint(0f, 60f);
-        jointConstraints["leftThumb2"] = new RotationConstraint(0f, 60f);
-        jointConstraints["leftThumb3"] = new RotationConstraint(0f, 90f);
+        foreach (string finger in rightFingers)
+        {
+            jointConstraints[$"{finger}1"] = new RotationConstraint(0f, 90f);
+            jointConstraints[$"{finger}2"] = new RotationConstraint(0f, 100f);
+            jointConstraints[$"{finger}3"] = new RotationConstraint(0f, 80f);
+        }
+        jointConstraints["rightThumb1"] = new RotationConstraint(0f, 60f);
+        jointConstraints["rightThumb2"] = new RotationConstraint(0f, 60f);
+        jointConstraints["rightThumb3"] = new RotationConstraint(0f, 90f);
 
-        jointConstraints["rightThumb1"] = new RotationConstraint(-60f, 0f);
-        jointConstraints["rightThumb2"] = new RotationConstraint(-60f, 0f);
-        jointConstraints["rightThumb3"] = new RotationConstraint(-90f, 0f);
-
-        // Upper body joints (Flexible limits to allow expressive signing)
         jointConstraints["leftArm"]      = new RotationConstraint(-180f, 180f);
         jointConstraints["leftForeArm"]  = new RotationConstraint(-180f, 180f);
         jointConstraints["rightArm"]     = new RotationConstraint(-180f, 180f);
         jointConstraints["rightForeArm"] = new RotationConstraint(-180f, 180f);
-        
-        Debug.Log($"[IKSolver] Initialized with {jointConstraints.Count} upper body and hand constraints.");
     }
 
     public BoneRotationSet ApplyConstraints(BoneRotationSet rotations)
@@ -77,11 +70,23 @@ public class IKSolver : MonoBehaviour
         RotationConstraint constraint = jointConstraints[boneName];
         Vector3 euler = rotation.eulerAngles;
 
-        float z = euler.z;
-        if (z > 180f) z -= 360f;
-
-        float clampedZ = Mathf.Clamp(z, constraint.minZ, constraint.maxZ);
-
-        return Quaternion.Euler(euler.x, euler.y, clampedZ);
+        // Thumbs and Arms still use Z
+        if (boneName.Contains("Thumb") || boneName.Contains("Arm"))
+        {
+            float z = euler.z;
+            if (z > 180f) z -= 360f;
+            float clampedZ = Mathf.Clamp(z, constraint.minZ, constraint.maxZ);
+            return Quaternion.Euler(euler.x, euler.y, clampedZ);
+        }
+        // Main fingers use X
+        else
+        {
+            float x = euler.x;
+            if (x > 180f) x -= 360f;
+            
+            // Wide clamp to prevent conflict with axisMultiplier in the Mapper
+            float clampedX = Mathf.Clamp(x, -100f, 100f); 
+            return Quaternion.Euler(clampedX, euler.y, euler.z);
+        }
     }
 }
