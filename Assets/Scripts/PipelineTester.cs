@@ -1,65 +1,51 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 
-// Script to test the full pipeline: Landmark mapping, IK solving, and animation application
+// Script to test the full pipeline: load exported JSON and queue its sign frame data on the SignPlayer
+// Will be fully integrated into SignPlayer once the entire system is verified and stable
 
+[RequireComponent(typeof(SignPlayer))]
 public class PipelineTester : MonoBehaviour
 {
-    private LandmarkMapper mapper;
-    private IKSolver solver;
-    private AnimationController controller;
+    // JSON from LandmarkExtractor goes in here
+    public TextAsset jsonFile;
 
+    // Fallback pure-text JSON payload to use if no file is assigned
     [TextArea(5, 20)]
     public string jsonPayload; 
 
-    IEnumerator Start()
+    void Start()
     {
-        mapper = GetComponent<LandmarkMapper>();
-        solver = GetComponent<IKSolver>();
-        controller = GetComponent<AnimationController>();
+        SignPlayer player = GetComponent<SignPlayer>();
 
-        if (mapper == null || solver == null || controller == null)
+        // Import JSON data
+        string json = jsonFile != null ? jsonFile.text : jsonPayload;
+        if (string.IsNullOrEmpty(json))
         {
-            Debug.LogError("[PipelineTester] Missing required pipeline components!");
-            yield break;
+            Debug.LogWarning("[PipelineTester] No JSON provided. Assign a TextAsset or paste the Python output into the Inspector.");
+            return;
         }
 
-        yield return new WaitForEndOfFrame();
-        mapper.Initialize(controller.GetNeutralPose());
-        solver.Initialize();
+        // Parse JSON into a LandmarkSequence object
+        LandmarkSequence sequence = JsonUtility.FromJson<LandmarkSequence>(json);
 
-        if (string.IsNullOrEmpty(jsonPayload))
+        // Handle single-sign exports
+        if (sequence == null || sequence.signs == null || sequence.signs.Count == 0)
         {
-            Debug.LogWarning("[PipelineTester] No JSON payload provided. Please paste the Python output into the Inspector.");
-            yield break;
+            LandmarkSeries single = JsonUtility.FromJson<LandmarkSeries>(json);
+            sequence = new LandmarkSequence();
+            if (single != null && single.frames != null && single.frames.Count > 0) sequence.signs.Add(single);
         }
 
-        // Deserialize Mediapipe JSON payload into a LandmarkSeries
-        LandmarkSeries series = JsonUtility.FromJson<LandmarkSeries>(jsonPayload);
-        Debug.Log($"[PipelineTester] Loaded '{series.glossLabel}' with {series.frameCount} frames.");
-
-        // Start playback
-        StartCoroutine(PlaySignSequence(series));
-    }
-
-    IEnumerator PlaySignSequence(LandmarkSeries series)
-    {
-        float frameInterval = 1f / series.frameRate;
-
-        foreach (LandmarkFrame frame in series.frames)
+        // Error handling
+        if (sequence.signs.Count == 0)
         {
-            BoneRotationSet mappedRotations = mapper.MapFrame(frame);
-            BoneRotationSet constrainedRotations = solver.ApplyConstraints(mappedRotations);
-            
-            // Push the frame to avatar
-            controller.ApplyRotations(constrainedRotations);
-
-            // Wait for next frame
-            yield return new WaitForSeconds(frameInterval);
+            Debug.LogError("[PipelineTester] JSON payload contained no frames.");
+            return;
         }
 
-        Debug.Log($"[PipelineTester] Finished playing {series.glossLabel}.");
+        // Queue each sign on the player (with logs)
+        Debug.Log($"[PipelineTester] Queuing {sequence.signs.Count} sign(s): {string.Join(", ", sequence.signs.ConvertAll(s => s.glossLabel))}");
+        foreach (LandmarkSeries sign in sequence.signs) player.Enqueue(sign);
     }
 }

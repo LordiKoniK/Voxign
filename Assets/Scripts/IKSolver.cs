@@ -1,92 +1,60 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-// This is the missing definition!
-[System.Serializable]
-public class RotationConstraint
-{
-    public float minZ;
-    public float maxZ;
-
-    public RotationConstraint(float min, float max)
-    {
-        minZ = min;
-        maxZ = max;
-    }
-}
-
+// Applies inverse kinematics constraints to the bone rotations
+// This ensures that joints do not bend beyond reasonable limits
 public class IKSolver : MonoBehaviour
 {
-    private Dictionary<string, RotationConstraint> jointConstraints = new Dictionary<string, RotationConstraint>();
+    private readonly List<(string bone, string parent, float maxBend)> bendLimits = new List<(string, string, float)>();
 
+    // Define the rotational limits
     public void Initialize()
     {
-        string[] leftFingers = { "leftIndex", "leftMiddle", "leftRing", "leftPinky" };
-        string[] rightFingers = { "rightIndex", "rightMiddle", "rightRing", "rightPinky" };
+        bendLimits.Clear();
 
-        // Rotation constraints for each finger 
-        foreach (string finger in leftFingers)
-        {
-            jointConstraints[$"{finger}1"] = new RotationConstraint(-90f, 0f);
-            jointConstraints[$"{finger}2"] = new RotationConstraint(-100f, 0f);
-            jointConstraints[$"{finger}3"] = new RotationConstraint(-80f, 0f);
-        }
-        jointConstraints["leftThumb1"] = new RotationConstraint(-60f, 0f);
-        jointConstraints["leftThumb2"] = new RotationConstraint(-60f, 0f);
-        jointConstraints["leftThumb3"] = new RotationConstraint(-90f, 0f);
+        foreach (string side in new[] { "left", "right" })
+        {   
+            // Hierarchical IK limits (-> means dependent on)
+            // Forearm -> Arm
+            bendLimits.Add(($"{side}ForeArm", $"{side}Arm", 150f));
 
-        foreach (string finger in rightFingers)
-        {
-            jointConstraints[$"{finger}1"] = new RotationConstraint(0f, 90f);
-            jointConstraints[$"{finger}2"] = new RotationConstraint(0f, 100f);
-            jointConstraints[$"{finger}3"] = new RotationConstraint(0f, 80f);
-        }
-        jointConstraints["rightThumb1"] = new RotationConstraint(0f, 60f);
-        jointConstraints["rightThumb2"] = new RotationConstraint(0f, 60f);
-        jointConstraints["rightThumb3"] = new RotationConstraint(0f, 90f);
-
-        jointConstraints["leftArm"]      = new RotationConstraint(-180f, 180f);
-        jointConstraints["leftForeArm"]  = new RotationConstraint(-180f, 180f);
-        jointConstraints["rightArm"]     = new RotationConstraint(-180f, 180f);
-        jointConstraints["rightForeArm"] = new RotationConstraint(-180f, 180f);
-    }
-
-    public BoneRotationSet ApplyConstraints(BoneRotationSet rotations)
-    {
-        BoneRotationSet constrainedSet = new BoneRotationSet();
-        
-        foreach (var pair in rotations.rotations)
-        {
-            constrainedSet.SetRotation(pair.Key, ClampRotation(pair.Key, pair.Value));
-        }
-        
-        return constrainedSet;
-    }
-
-    private Quaternion ClampRotation(string boneName, Quaternion rotation)
-    {
-        if (!jointConstraints.ContainsKey(boneName)) return rotation;
-
-        RotationConstraint constraint = jointConstraints[boneName];
-        Vector3 euler = rotation.eulerAngles;
-
-        // Thumbs and Arms still use Z
-        if (boneName.Contains("Thumb") || boneName.Contains("Arm"))
-        {
-            float z = euler.z;
-            if (z > 180f) z -= 360f;
-            float clampedZ = Mathf.Clamp(z, constraint.minZ, constraint.maxZ);
-            return Quaternion.Euler(euler.x, euler.y, clampedZ);
-        }
-        // Main fingers use X
-        else
-        {
-            float x = euler.x;
-            if (x > 180f) x -= 360f;
+            // Thumb phalanges [Thumb3 -> Thumb2 -> Thumb1]
+            bendLimits.Add(($"{side}Thumb2", $"{side}Thumb1", 70f));
+            bendLimits.Add(($"{side}Thumb3", $"{side}Thumb2", 90f));
             
-            // Wide clamp to prevent conflict with axisMultiplier in the Mapper
-            float clampedX = Mathf.Clamp(x, -100f, 100f); 
-            return Quaternion.Euler(clampedX, euler.y, euler.z);
+            // Loop for other fingers (same 3 -> 2 -> 1 structure for distal -> intermediate -> proximal phalanges)
+            foreach (string finger in new[] { "Index", "Middle", "Ring", "Pinky" })
+            {
+                bendLimits.Add(($"{side}{finger}1", $"{side}Hand", 90f));
+                bendLimits.Add(($"{side}{finger}2", $"{side}{finger}1", 110f));
+                bendLimits.Add(($"{side}{finger}3", $"{side}{finger}2", 90f));
+            }
         }
+    }
+
+    // Applies IK limits to the given set of bone rotations
+    public BoneRotationSet ApplyConstraints(BoneRotationSet input)
+    {
+        BoneRotationSet constrained = new BoneRotationSet();
+
+        // Copy incoming bone rotations/blendshape weights to a set
+        foreach (var pair in input.targets) constrained.targets[pair.Key] = pair.Value;
+        foreach (var pair in input.blendshapeWeights) constrained.blendshapeWeights[pair.Key] = pair.Value;
+
+        foreach (var (bone, parent, maxBend) in bendLimits)
+        {   
+            // Skip if either the bone or its parent is not present in the set (prevent reference errors)
+            if (!constrained.targets.TryGetValue(bone, out BoneTarget target)) continue;
+            if (!constrained.targets.TryGetValue(parent, out BoneTarget parentTarget)) continue;
+
+            // Skip if the joint's rotation angle is already within the allowed maximum bend
+            if (Vector3.Angle(parentTarget.direction, target.direction) <= maxBend) continue;
+            
+            // Apply the maximum bend constraint to the joint's rotation
+            target.direction = Vector3.RotateTowards(parentTarget.direction, target.direction, maxBend * Mathf.Deg2Rad, 0f);
+            constrained.targets[bone] = target;
+        }
+
+        return constrained;
     }
 }

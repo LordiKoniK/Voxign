@@ -1,123 +1,106 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+// Maps MediaPipe landmark coordinates to avatar bone rotations
 public class LandmarkMapper : MonoBehaviour
 {
-    private Dictionary<string, Quaternion> neutralPoseCache;
+    // Finger types and their corresponding MediaPipe landmark indices
+    private static readonly string[] Fingers = { "Index", "Middle", "Ring", "Pinky" };
+    private static readonly int[] FingerBases = { 5, 9, 13, 17 };
 
-    public void Initialize(Dictionary<string, Quaternion> neutralPose)
+    private float aspectRatio = 1f;
+
+    public void Initialize(float imageAspectRatio)
     {
-        neutralPoseCache = neutralPose;
+        aspectRatio = imageAspectRatio > 0f ? imageAspectRatio : 1f;
     }
 
-    private Vector3 ToUnitySpace(Vector3 mp)
+    // Convert MediaPipe coordinates to Unity coordinate space
+    // MediaPipe format: x = left, y = down, z = away from camera 
+    // Unity format: x = right, y = up, z = forward
+    private Vector3 ToAvatarSpace(Vector3 mp)
     {
-        // Invert Y and Z to map MediaPipe to Unity world space
-        return new Vector3(mp.x, -mp.y, -mp.z);
+        // Apply the coordinate flip
+        return new Vector3(-mp.x * aspectRatio, -mp.y, -mp.z * aspectRatio);
     }
 
+    // Maps a single frame of landmarks to the avatar's bone rotations
     public BoneRotationSet MapFrame(LandmarkFrame frame)
     {
-        BoneRotationSet boneRotations = new BoneRotationSet();
-
+        BoneRotationSet boneSet = new BoneRotationSet();
+        
+        // Map the pose (shoulders and arms) first
         if (frame.poseLandmarks != null && frame.poseLandmarks.Count >= 17)
         {
-            MapUpperBodyPose(frame.poseLandmarks, boneRotations);
+            MapArm(frame.poseLandmarks, boneSet, "left", 11, 13, 15);
+            MapArm(frame.poseLandmarks, boneSet, "right", 12, 14, 16);
         }
 
-        if (frame.handLandmarksLeft != null && frame.handLandmarksLeft.Count == 21)
+        // Only compute hand mappings if they're actually used in this frame/sign
+        if (IsTracked(frame.handLandmarksLeft))
         {
-            MapFingers(frame.handLandmarksLeft, boneRotations, "left", -1f);
+            MapHand(frame.handLandmarksLeft, boneSet, "left");
         }
 
-        if (frame.handLandmarksRight != null && frame.handLandmarksRight.Count == 21)
+        if (IsTracked(frame.handLandmarksRight))
         {
-            MapFingers(frame.handLandmarksRight, boneRotations, "right", 1f);
+            MapHand(frame.handLandmarksRight, boneSet, "right");
         }
 
-        return boneRotations;
+        return boneSet;
     }
 
-    private void MapUpperBodyPose(List<Vector3> pose, BoneRotationSet boneSet)
+    // Check if a hand is tracked (i.e. the hand has at least one non-zero landmark)
+    public static bool IsTracked(List<Vector3> hand)
     {
-        Vector3 leftShoulder = ToUnitySpace(pose[11]);
-        Vector3 rightShoulder = ToUnitySpace(pose[12]);
-        Vector3 leftElbow = ToUnitySpace(pose[13]);
-        Vector3 rightElbow = ToUnitySpace(pose[14]);
-        Vector3 leftWrist = ToUnitySpace(pose[15]);
-        Vector3 rightWrist = ToUnitySpace(pose[16]);
-
-        // Upper Arms 
-        Vector3 leftArmDir = (leftElbow - leftShoulder).normalized;
-        if (leftArmDir != Vector3.zero)
+        if (hand == null || hand.Count < 21) return false;
+        foreach (Vector3 lm in hand)
         {
-            Quaternion leftArmRot = Quaternion.FromToRotation(Vector3.right, leftArmDir);
-            boneSet.SetRotation("leftArm", ApplyNeutralOffset("leftArm", leftArmRot));
+            if (lm != Vector3.zero) return true;
         }
-
-        Vector3 rightArmDir = (rightElbow - rightShoulder).normalized;
-        if (rightArmDir != Vector3.zero)
-        {
-            Quaternion rightArmRot = Quaternion.FromToRotation(Vector3.left, rightArmDir);
-            boneSet.SetRotation("rightArm", ApplyNeutralOffset("rightArm", rightArmRot));
-        }
-
-        // Forearms 
-        Vector3 leftForearmDir = (leftWrist - leftElbow).normalized;
-        float leftElbowBend = Vector3.Angle(leftArmDir, leftForearmDir);
-        boneSet.SetRotation("leftForeArm", ApplyNeutralOffset("leftForeArm", Quaternion.Euler(0, 0, -leftElbowBend)));
-
-        Vector3 rightForearmDir = (rightWrist - rightElbow).normalized;
-        float rightElbowBend = Vector3.Angle(rightArmDir, rightForearmDir);
-        boneSet.SetRotation("rightForeArm", ApplyNeutralOffset("rightForeArm", Quaternion.Euler(0, 0, rightElbowBend)));
+        return false;
     }
 
-    private void MapFingers(List<Vector3> landmarks, BoneRotationSet boneSet, string side, float axisMultiplier)
+    // Actual mapping logic 
+    private void MapArm(List<Vector3> pose, BoneRotationSet boneSet, string side, int shoulderIdx, int elbowIdx, int wristIdx)
     {
-        List<Vector3> unityLandmarks = new List<Vector3>();
-        foreach (var lm in landmarks) unityLandmarks.Add(ToUnitySpace(lm));
-
-        // Thumb
-        boneSet.SetRotation($"{side}Thumb1", CalculateCurl(unityLandmarks[0], unityLandmarks[1], unityLandmarks[2], $"{side}Thumb1", axisMultiplier));
-        boneSet.SetRotation($"{side}Thumb2", CalculateCurl(unityLandmarks[1], unityLandmarks[2], unityLandmarks[3], $"{side}Thumb2", axisMultiplier));
-        boneSet.SetRotation($"{side}Thumb3", CalculateCurl(unityLandmarks[2], unityLandmarks[3], unityLandmarks[4], $"{side}Thumb3", axisMultiplier)); 
-
-        // Main 4 Fingers
-        string[] fingers = { "Index", "Middle", "Ring", "Pinky" };
-        int[] baseIndices = { 5, 9, 13, 17 };
-
-        for (int i = 0; i < fingers.Length; i++)
-        {
-            int b = baseIndices[i];
-            string fName = fingers[i];
-
-            boneSet.SetRotation($"{side}{fName}1", CalculateCurl(unityLandmarks[0], unityLandmarks[b], unityLandmarks[b + 1], $"{side}{fName}1", axisMultiplier));
-            boneSet.SetRotation($"{side}{fName}2", CalculateCurl(unityLandmarks[b], unityLandmarks[b + 1], unityLandmarks[b + 2], $"{side}{fName}2", axisMultiplier));
-            boneSet.SetRotation($"{side}{fName}3", CalculateCurl(unityLandmarks[b + 1], unityLandmarks[b + 2], unityLandmarks[b + 3], $"{side}{fName}3", axisMultiplier));
-        }
-    }
-
-    private Quaternion CalculateCurl(Vector3 parentJoint, Vector3 currentJoint, Vector3 childJoint, string boneName, float axisMultiplier)
-    {
-        Vector3 bone1 = (currentJoint - parentJoint).normalized;
-        Vector3 bone2 = (childJoint - currentJoint).normalized;
+        if (pose[shoulderIdx] == Vector3.zero || pose[elbowIdx] == Vector3.zero || pose[wristIdx] == Vector3.zero) return;
         
-        float bendAngle = Vector3.Angle(bone1, bone2);
-        
-        // Use X axis for main 4 fingers and Z axis for thumbs
-        Quaternion localCurl = boneName.Contains("Thumb") 
-            ? Quaternion.Euler(0, 0, bendAngle * axisMultiplier) 
-            : Quaternion.Euler(bendAngle * axisMultiplier, 0, 0);
+        // Start by applying coordinate flip
+        Vector3 shoulder = ToAvatarSpace(pose[shoulderIdx]);
+        Vector3 elbow = ToAvatarSpace(pose[elbowIdx]);
+        Vector3 wrist = ToAvatarSpace(pose[wristIdx]);
 
-        return ApplyNeutralOffset(boneName, localCurl);
+        // Compute direction vectors from the coordinates 
+        // This gives us the angle to set the avatar's bone to
+        boneSet.SetDirection($"{side}Arm", elbow - shoulder);
+        boneSet.SetDirection($"{side}ForeArm", wrist - elbow);
     }
 
-    private Quaternion ApplyNeutralOffset(string boneName, Quaternion calculatedRot)
+    private void MapHand(List<Vector3> landmarks, BoneRotationSet boneSet, string side)
     {
-        if (neutralPoseCache != null && neutralPoseCache.TryGetValue(boneName, out Quaternion neutral))
+        Vector3[] lm = new Vector3[21];
+        // Apply coordinate flip to all hand landmarks
+        for (int i = 0; i < 21; i++) lm[i] = ToAvatarSpace(landmarks[i]);
+
+        // Start by finding the overall hand's position
+        // Wrist(0) - middle finger(9) relationship gives us the hand's direction
+        // Pointer(5) - pinky(17) relationship determines the roll of the hand (around the wrist-middle finger axis)
+        boneSet.SetOrientation($"{side}Hand", lm[9] - lm[0], lm[5] - lm[17]);
+
+        // Actually map the fingers themselves now (each finger has 3 bones)
+        // Thumb must be handled individually because it's alignment is inherently different (opposable digit)
+        boneSet.SetDirection($"{side}Thumb1", lm[2] - lm[1]);
+        boneSet.SetDirection($"{side}Thumb2", lm[3] - lm[2]);
+        boneSet.SetDirection($"{side}Thumb3", lm[4] - lm[3]);
+
+        // Map the other 4 fingers
+        for (int i = 0; i < Fingers.Length; i++)
         {
-            return calculatedRot * neutral;
+            int b = FingerBases[i];
+            boneSet.SetDirection($"{side}{Fingers[i]}1", lm[b + 1] - lm[b]);
+            boneSet.SetDirection($"{side}{Fingers[i]}2", lm[b + 2] - lm[b + 1]);
+            boneSet.SetDirection($"{side}{Fingers[i]}3", lm[b + 3] - lm[b + 2]);
         }
-        return calculatedRot;
     }
 }

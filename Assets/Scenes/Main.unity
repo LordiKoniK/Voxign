@@ -1090,6 +1090,7 @@ GameObject:
   - component: {fileID: 5866666020028671526}
   - component: {fileID: 5866666020028671528}
   - component: {fileID: 5866666020028671527}
+  - component: {fileID: 5866666020028671529}
   m_Layer: 0
   m_Name: Louise
   m_TagString: Untagged
@@ -2725,6 +2726,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 45a2545479e66ec4ca3ffd2b37f2dc56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::AnimationController
+  smoothingSpeed: 20
 --- !u!114 &5866666020028671527
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2737,6 +2739,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 23286fe0769b4584b8d2a4df50f6222b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PipelineTester
+  jsonFile: {fileID: 4900000, guid: 36f9f164c9db7ef46becf3d0a8008963, type: 3}
   jsonPayload: '{"glossLabel": "yes", "frameCount": 68, "frameRate": 30, "frames":
     [{"frameIndex": 0, "handLandmarksLeft": [{"x": 0.0, "y": 0.0, "z": 0.0}, {"x":
     0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 0.0, "z": 0.0}, {"x": 0.0, "y": 0.0,
@@ -6762,6 +6765,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6c2d74425f1fc104ebd7ac6feb0a7c0a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::IKSolver
+--- !u!114 &5866666020028671529
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919132147818981092}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 83e13cb66c717d748ac86e3bbe0288c1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SignPlayer
+  transitionDuration: 0.25
 --- !u!4 &6085633309092058905
 Transform:
   m_ObjectHideFlags: 0

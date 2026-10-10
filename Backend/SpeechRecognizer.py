@@ -61,7 +61,7 @@ async def microphone_stream():
                 except Exception as e:
                     print(f"Receiver error: {e}")
 
-            # Run both sending and receiving concurrently
+            # Run both sending and receiving concurrently to minimize downtime
             await asyncio.gather(sender(), receiver())
 
     except Exception as e:
