@@ -1091,6 +1091,7 @@ GameObject:
   - component: {fileID: 5866666020028671528}
   - component: {fileID: 5866666020028671527}
   - component: {fileID: 5866666020028671529}
+  - component: {fileID: 5866666020028671530}
   m_Layer: 0
   m_Name: Louise
   m_TagString: Untagged
@@ -6778,6 +6779,91 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SignPlayer
   transitionDuration: 0.25
+--- !u!114 &5866666020028671530
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919132147818981092}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: b2d8418b0b9634b1892b0268dd9c2743, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Animation.Rigging::UnityEngine.Animations.Rigging.BoneRenderer
+  boneShape: 1
+  drawBones: 1
+  drawTripods: 0
+  boneSize: 1
+  tripodSize: 1
+  boneColor: {r: 0, g: 0, b: 1, a: 0.5}
+  m_Transforms:
+  - {fileID: 8031599372160722386}
+  - {fileID: 3155445267740691490}
+  - {fileID: 3988457939349921418}
+  - {fileID: 3592161986169205339}
+  - {fileID: 6701880257486847808}
+  - {fileID: 2934678396587174628}
+  - {fileID: 322764059958444661}
+  - {fileID: 3214081579466335576}
+  - {fileID: 5855040602963783900}
+  - {fileID: 5226853786009829915}
+  - {fileID: 6085633309092058905}
+  - {fileID: 5397944737342848838}
+  - {fileID: 788719208871142435}
+  - {fileID: 6224502425855689972}
+  - {fileID: 3957939047050137923}
+  - {fileID: 4956187212970552154}
+  - {fileID: 4220371916474739953}
+  - {fileID: 3229093130134481761}
+  - {fileID: 4497904837711966747}
+  - {fileID: 3947834818688269182}
+  - {fileID: 187219358776972102}
+  - {fileID: 7144345587302578947}
+  - {fileID: 2008274204482411969}
+  - {fileID: 7950495113114700837}
+  - {fileID: 354013564571862310}
+  - {fileID: 4697166471400226419}
+  - {fileID: 3110898408288722894}
+  - {fileID: 7751492362878547677}
+  - {fileID: 8028765141046115017}
+  - {fileID: 7361818174624388019}
+  - {fileID: 6194461637998330061}
+  - {fileID: 8499276922246151936}
+  - {fileID: 5137736268093479471}
+  - {fileID: 1332486193}
+  - {fileID: 3152888160995281362}
+  - {fileID: 1426540647186029}
+  - {fileID: 3615604414797716574}
+  - {fileID: 7573514158132323450}
+  - {fileID: 5257339822483330001}
+  - {fileID: 115569327590873371}
+  - {fileID: 6556232932074193249}
+  - {fileID: 6511915913397582255}
+  - {fileID: 8599635493772705204}
+  - {fileID: 7969705681111030490}
+  - {fileID: 1054359879955136933}
+  - {fileID: 4075893238630424203}
+  - {fileID: 6914603337021720845}
+  - {fileID: 319261559188431518}
+  - {fileID: 4896627725090380758}
+  - {fileID: 3581027604546964443}
+  - {fileID: 5047740425707285932}
+  - {fileID: 4941793546434659889}
+  - {fileID: 6359685609760112585}
+  - {fileID: 6856791162788479615}
+  - {fileID: 8251090774873312065}
+  - {fileID: 8553191862201233417}
+  - {fileID: 719965168119097692}
+  - {fileID: 6630309817829564297}
+  - {fileID: 199069969862081625}
+  - {fileID: 3980454475846290870}
+  - {fileID: 4005570585768278609}
+  - {fileID: 2777123508115236030}
+  - {fileID: 840909390475656007}
+  - {fileID: 2479750333557419000}
+  - {fileID: 4862780909473754210}
+  - {fileID: 1232242268095883666}
 --- !u!4 &6085633309092058905
 Transform:
   m_ObjectHideFlags: 0

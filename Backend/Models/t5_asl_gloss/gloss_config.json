@@ -1,0 +1,15 @@
+{
+  "base_model": "google-t5/t5-small",
+  "task_prefix": "translate English to ASL gloss: ",
+  "lowercase_targets": true,
+  "max_source_len": 64,
+  "max_target_len": 64,
+  "num_beams": 4,
+  "learning_rate": 0.0003,
+  "epochs": 29,
+  "cv_scores": {
+    "bleu": 74.45,
+    "chrf": 92.1,
+    "exact_match": 79.53
+  }
+}
