@@ -29,6 +29,24 @@ public class LandmarkSequence
 {
     public List<string> glossSequence = new List<string>();
     public List<LandmarkSeries> signs = new List<LandmarkSeries>();
+
+    // Returns null if the JSON holds no playable frames, helps make it safe to call from background threads
+    public static LandmarkSequence FromJson(string json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+
+        LandmarkSequence sequence = JsonUtility.FromJson<LandmarkSequence>(json);
+
+        // Older single-sign exports have no "signs" list
+        if (sequence == null || sequence.signs == null || sequence.signs.Count == 0)
+        {
+            LandmarkSeries single = JsonUtility.FromJson<LandmarkSeries>(json);
+            sequence = new LandmarkSequence();
+            if (single != null && single.frames != null && single.frames.Count > 0) sequence.signs.Add(single);
+        }
+
+        return sequence.signs.Count > 0 ? sequence : null;
+    }
 }
 
 // BoneTarget: A bone's direction in avatar root space, with an optional secondary axis to adjust twist if necessary

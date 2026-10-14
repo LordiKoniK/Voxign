@@ -8,8 +8,6 @@ import torch
 from dotenv import load_dotenv
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-# Updated version of SpeechRecognizer, with the addition of integrating the English-ASL translation via the T5 model
-
 # Load API key from env 
 load_dotenv()
 
@@ -19,7 +17,7 @@ CHANNELS = 1
 RATE = 16000
 CHUNK = 1024
 
-# Model directory
+# T5 model directory
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Models', 't5_asl_gloss')
 
 
@@ -45,8 +43,8 @@ class GlossTranslator:
         glosses = self.tokenizer.batch_decode(generated, skip_special_tokens=True)
         return " ".join(" ".join(g.upper().split()) for g in glosses)
 
-
-async def microphone_stream(translator):
+# Streams the microphone to Deepgram and awaits on_transcript(text) for every final transcript
+async def microphone_stream(on_transcript):
     api_key = os.getenv("DEEPGRAM_API_KEY")
     if not api_key:
         print("Error: DEEPGRAM_API_KEY not found in .env file.")
@@ -66,7 +64,7 @@ async def microphone_stream(translator):
             print("Microphone active. Listening... (Press Ctrl+C to stop)")
             loop = asyncio.get_running_loop()
 
-            # Helper function to read audio
+            # Helper functions to read, send and receive data
             def get_audio():
                 return stream.read(CHUNK, exception_on_overflow=False)
 
@@ -90,13 +88,8 @@ async def microphone_stream(translator):
 
                         alts = res.get("channel", {}).get("alternatives", [])
                         transcript = alts[0].get("transcript", "") if alts else ""
-                        if not transcript:
-                            continue
-
-                        # Run inference off of main event loop so audio keeps streaming
-                        gloss = await loop.run_in_executor(None, translator.translate, transcript)
-                        print(f"English:   {transcript}")
-                        print(f"ASL Gloss: {gloss}\n")
+                        if transcript:
+                            await on_transcript(transcript)
                 except asyncio.CancelledError:
                     pass
                 except Exception as e:
@@ -113,15 +106,33 @@ async def microphone_stream(translator):
         stream.close()
         p.terminate()
 
-# Integration with translation model
+
+def load_translator(model_dir=MODEL_DIR):
+    if not os.path.exists(os.path.join(model_dir, 'gloss_config.json')):
+        raise FileNotFoundError(f"Trained model not found in {model_dir}. Unzip the notebook's t5_asl_gloss.zip there.")
+    print("Loading T5 gloss model...")
+    return GlossTranslator(model_dir)
+
+
+def main():
+    try:
+        # Load before connecting, since Deepgram closes idle connections after a few seconds
+        translator = load_translator()
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        return
+
+    async def print_translation(transcript):
+        # Run inference off of the main event loop so audio keeps streaming
+        gloss = await asyncio.get_running_loop().run_in_executor(None, translator.translate, transcript)
+        print(f"English:   {transcript}")
+        print(f"ASL Gloss: {gloss}\n")
+
+    try:
+        asyncio.run(microphone_stream(print_translation))
+    except KeyboardInterrupt:
+        print("\nTranscription stopped cleanly.")
+
+
 if __name__ == "__main__":
-    if not os.path.exists(os.path.join(MODEL_DIR, 'gloss_config.json')):
-        print(f"Error: trained model not found in {MODEL_DIR}. Unzip the notebook's t5_asl_gloss.zip there.")
-    else:
-        # Load model before connecting since Deepgram closes idle connections after a few seconds
-        print("Loading T5 gloss model...")
-        gloss_translator = GlossTranslator(MODEL_DIR)
-        try:
-            asyncio.run(microphone_stream(gloss_translator))
-        except KeyboardInterrupt:
-            print("\nTranscription stopped cleanly.")
+    main()

@@ -10,6 +10,11 @@ test_sequence*
 # Environment variables
 .env
 
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 
 
 # Unity .gitignore Template
