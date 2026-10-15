@@ -1,0 +1,7 @@
+numpy
+rerun
+websockets
+pyaudio
+python-dotenv
+torch
+transformers
