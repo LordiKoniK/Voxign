@@ -1,13 +1,24 @@
 import rerun as rr
+import rerun
 import json
 import numpy as np
+import os
 from pathlib import Path
 
 # Script for visualizing MediaPipe landmark data using the Rerun library
 # Used during testing/development to verify the data being streamed to the Unity avatar
 
-# Initialize Rerun and create viewer window
-rr.init("MediaPipe_Visualizer", spawn=True)
+# Locate the Rerun Viewer executable bundled with rerun-sdk in the venv.
+# The rerun binary lives in .venv/Scripts/rerun.exe (Windows) or
+# .venv/bin/rerun (Linux) relative to the project root (two dirs up).
+_rerun_exe = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "rerun.exe"
+if not _rerun_exe.exists():
+    _rerun_exe = Path(__file__).resolve().parents[2] / ".venv" / "bin" / "rerun"
+
+# Initialize the recording, then explicitly spawn the viewer with the
+# resolved executable path so we don't depend on PATH lookup.
+rr.init("MediaPipe_Visualizer")
+rerun.spawn(executable_path=str(_rerun_exe) if _rerun_exe.exists() else None)
 
 # Create edges between hand joints for visualization
 HAND_CHAINS = [[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [0, 9, 10, 11, 12], [0, 13, 14, 15, 16], [0, 17, 18, 19, 20], [5, 9, 13, 17]]

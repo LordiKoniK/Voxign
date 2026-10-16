@@ -4,7 +4,7 @@ import os
 import re
 
 # Standalone mode options, checked in this order: word sequence, video ID, single gloss
-target_sequence = ["happy", "yes", "hello"]       # Words to sign in order, e.g. ["hello", "yes", "book"], or [] to skip
+target_sequence = ["book", "yes", "hello"]       # Words to sign in order, e.g. ["hello", "yes", "book"], or [] to skip
 target_video_id = "69546"                        # Specific video ID (used primarily for testing purposes), leave as "" for empty
 target_gloss = "yes"                             # Single word mode, picks the best-tracked entry for a given word
 
