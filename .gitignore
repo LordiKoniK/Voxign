@@ -16,6 +16,13 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Recovery files from Unity Editor
+/[Aa]ssets/_[Rr]ecovery/
+_Recovery.meta
+
+# Unity solution files
+*.slnx
+
 
 # Unity .gitignore Template
 # Source: https://github.com/github/gitignore/blob/main/Unity.gitignore
