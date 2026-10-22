@@ -3,6 +3,9 @@ Data/
 
 # Personal development environment tweaks
 Assets/QOL/
+.kilo/
+Editor/
+Editor.meta
 
 # Temporary testing files
 test_sequence*
@@ -15,6 +18,9 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+
+# Unity package assets
+TextMesh Pro/
 
 
 # Unity .gitignore Template
