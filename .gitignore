@@ -21,6 +21,12 @@ __pycache__/
 
 # Unity package assets
 TextMesh Pro/
+# Recovery files from Unity Editor
+/[Aa]ssets/_[Rr]ecovery/
+_Recovery.meta
+
+# Unity solution files
+*.slnx
 
 
 # Unity .gitignore Template

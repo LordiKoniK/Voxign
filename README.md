@@ -1,0 +1,190 @@
+# Voxign 
+
+A real-time voice-to-American-Sign-Language (ASL) translation system. The
+pipeline transcribes spoken input via Deepgram, translates the transcript to
+ASL gloss using a fine-tuned T5 model, resolves landmark data from the WLASL
+dataset, and streams the resulting frame sequence to a Unity frontend over
+WebSocket for avatar animation.
+
+## Pipeline Overview 
+
+```
+Microphone → Deepgram (STT) → T5 Gloss Model → WLASL Landmark Library → Unity (WebSocket)
+```
+
+| Stage | Component | Source |
+|---|---|---|
+| Speech-to-text | Deepgram API (Nova-3) | `SpeechToGloss.py` |
+| Gloss translation | T5-small fine-tuned on English→ASL gloss | `SpeechToGloss.py` |
+| Landmark lookup | WLASL parsed data + landmark NPZ | `LandmarkExtractor.py` |
+| Unity bridge | WebSocket server (localhost) | `VoxignPipeline.py` |
+
+## Prerequisites
+
+- **Python 3.13+** – Required because PyAudio wheels are only available for
+  3.13 and older at the time of this project's creation. If a newer Python is needed, first verify that PyAudio is installable on your version.
+- **Unity Editor 6000.4.9f1** or newer.
+- **Deepgram API key** – Sign up at [deepgram.com](https://deepgram.com) and
+  store the key in `Backend/.env`:
+
+  ```
+  DEEPGRAM_API_KEY=your_key_here
+  ```
+
+- **WLASL landmark data** – Download from [Kaggle – Mutemotion Output](https://www.kaggle.com/datasets/abd0kamel/mutemotion-output):
+
+  | File | Destination |
+  |---|---|
+  | `landmarks_V3.npz` | `Backend/Data/` |
+  | `WLASL_parsed_data.json` | `Backend/Data/` |
+
+- **Git LFS** – Large files (Unity avatar, model weights) are stored via
+  Git LFS. Run `git lfs install` once, then `git lfs pull` to fetch them.
+
+## Installation
+
+From the project root (`Unity/`):
+
+```bash
+pip install -r Backend/requirements.txt
+```
+
+Dependencies:
+
+| Package | Purpose |
+|---|---|
+| `numpy` | Landmark array manipulation |
+| `rerun-sdk` | Offline visualization/debugging (MediapipeTester.py) |
+| `websockets` | WebSocket server + Deepgram client |
+| `pyaudio` | Microphone audio capture |
+| `python-dotenv` | `.env` file loading |
+| `torch` | T5 model inference |
+| `transformers` | Tokenizer + model loading |
+
+## Quick Start
+
+1. **Install dependencies** (see above).
+
+2. **(Optional) Install the Rerun Viewer** — Required only for
+   `MediapipeTester.py`. The `rerun-sdk` package bundles the Python SDK
+   but not the Viewer GUI. Download the viewer binary matching your
+   `rerun-sdk` version from the [Rerun releases page](https://github.com/rerun-io/rerun/releases)
+   and place it at `.venv/Scripts/rerun.exe` (Windows) or
+   `.venv/bin/rerun` (Linux):
+
+   ```bash
+   # Example for the current version
+   curl -L -o .venv/Scripts/rerun.exe \
+     https://github.com/rerun-io/rerun/releases/download/0.39.0/rerun-cli-0.39.0-x86_64-pc-windows-msvc.exe
+   ```
+
+3. **Place Kaggle data** in `Backend/Data/`.
+
+4. **Fetch LFS assets** from the repo root:
+
+   ```bash
+   git lfs pull
+   ```
+
+5. **Open Unity** at the project root (`Unity/`), load the `Main` scene, and
+   enter Play mode. Unity will wait for a WebSocket connection on
+   `ws://127.0.0.1:8765`.
+
+6. **Run the pipeline**:
+
+   ```bash
+   python VoxignPipeline.py
+   ```
+
+   Speak into the microphone. English transcripts, ASL gloss, and resolved
+   sign sequences print to the console, while landmark payloads are pushed to
+   Unity via WebSocket.
+
+## Scripts
+
+### VoxignPipeline.py
+
+Entry point for the full real-time pipeline. Starts a WebSocket server on
+`127.0.0.1:8765`, connects the microphone to Deepgram, and routes
+transcripts through the gloss translator and landmark resolver. The
+resulting JSON sequence is written to `Unity/Assets/test_sequence.json`
+(via atomic write-and-swap) and a WebSocket notification sent to Unity.
+
+### SpeechToGloss.py
+
+Contains the `GlossTranslator` class (T5-small fine-tuned for
+English→ASL gloss) and the `microphone_stream` async coroutine that
+streams raw audio to Deepgram over WebSocket. Also runnable standalone
+for testing transcription and translation only:
+
+```bash
+python SpeechToGloss.py
+```
+
+### LandmarkExtractor.py
+
+Defines `LandmarkLibrary`, which loads `WLASL_parsed_data.json` and
+`landmarks_V3.npz` once at startup, provides gloss resolution with
+multi-word phrase matching and fingerspelling fallbacks, and builds
+the frame-level JSON payload consumed by Unity. Runnable standalone for testing
+using the module-level `target_sequence`, `target_video_id`, or
+`target_gloss` options at the top of the file:
+
+```bash
+python LandmarkExtractor.py
+```
+
+### SpeechRecognizer.py
+
+Lightweight standalone script that streams microphone audio to Deepgram
+and prints raw transcripts. Useful for verifying the Deepgram connection
+and microphone setup without the full pipeline:
+
+```bash
+python SpeechRecognizer.py
+```
+
+### MediapipeTester.py
+
+Debug/visualization tool that reads `Assets/test_sequence.json` and
+renders the landmark data in [Rerun](https://rerun.io) for offline
+inspection of the data as Unity receives it. Requires the `test_sequence.json`
+file to exist (generated by running the pipeline or
+`LandmarkExtractor.py` first):
+
+```bash
+python MediapipeTester.py
+```
+
+> **Note:** The Rerun Viewer is a standalone GUI application. The
+> `rerun-sdk` Python package includes the SDK but **not** the viewer
+> binary. The viewer is resolved from `.venv/Scripts/rerun.exe`
+> (Windows) or `.venv/bin/rerun` (Linux). If missing, download it from
+> the [Rerun releases page](https://github.com/rerun-io/rerun/releases)
+> matching your `rerun-sdk` version and place it there.
+
+## Model Details
+
+The T5 gloss model is stored in `Models/t5_asl_gloss/` (tracked via Git LFS)
+and was fine-tuned from `google-t5/t5-small`. Training configuration and
+evaluation metrics are in `gloss_config.json`:
+
+| Metric | Score |
+|---|---|
+| BLEU | 74.45 |
+| chrF | 92.1 |
+| Exact match | 79.53 |
+
+## Notes
+
+- The WebSocket server currently binds to `127.0.0.1` (localhost)only. External (e.g. Android)
+  connections are planned for future releases.
+
+- Landmark JSON is written using a temporary file + atomic rename to
+  prevent Unity from reading a partially-written file.
+
+---
+
+This project is still in active development. This README will be updated
+as the project continues. For any enquiries, please email
+[nj.muranga@gmail.com](mailto:nj.muranga@gmail.com).
