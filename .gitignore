@@ -4,8 +4,7 @@ Data/
 # Personal development environment tweaks
 Assets/QOL/
 .kilo/
-Editor/
-Editor.meta
+
 
 # Temporary testing files
 test_sequence*
