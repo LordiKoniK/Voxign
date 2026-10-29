@@ -1,0 +1,3 @@
+{$VOXIGN_DOMAIN} {
+    reverse_proxy backend:8765
+}

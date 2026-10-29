@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -18,6 +19,8 @@ public class SignPlayer : MonoBehaviour
     private Coroutine playback;
 
     public bool IsPlaying => playback != null;
+
+    public event Action<string> SignStarted;
 
     // Unity lifecycle initialization method
     void Awake()
@@ -57,6 +60,7 @@ public class SignPlayer : MonoBehaviour
             yield return new WaitForSeconds(transitionDuration);
 
             Debug.Log($"[SignPlayer] Playing '{series.glossLabel}' ({series.frames.Count} frames).");
+            SignStarted?.Invoke(series.glossLabel);
             yield return PlayFrames(series);
         }
 

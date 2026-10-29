@@ -14,7 +14,8 @@ TRIM_IDLE_FRAMES = True
 
 # File paths for data input and output
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Data')
-OUTPUT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Assets', 'test_sequence.json')
+# You can export the JSON to a custom location if you want to
+OUTPUT_PATH = os.getenv("VOXIGN_SEQUENCE_PATH") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Assets', 'test_sequence.json')
 
 # Deepgram returns words as figures, WLASL expects them as words; this is a bridge for the common ones
 # NB: Only some of these actually have signs in WLASL; those without their own proper sign are signed digit by digit (shown later)

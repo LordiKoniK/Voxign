@@ -1,0 +1,5 @@
+numpy
+websockets
+python-dotenv
+transformers
+sentencepiece

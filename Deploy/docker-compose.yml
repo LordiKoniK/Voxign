@@ -1,0 +1,36 @@
+services:
+  backend:
+    build: ../Backend
+    env_file:
+      - ../Backend/.env
+    environment:
+      VOXIGN_DEV_MODE: "0"
+      VOXIGN_HOST: "0.0.0.0"
+      VOXIGN_PORT: "8765"
+      VOXIGN_SEQUENCE_PATH: "/app/test_sequence.json"
+      VOXIGN_AUTH_TOKEN: "${VOXIGN_AUTH_TOKEN:?set VOXIGN_AUTH_TOKEN in Deploy/.env}"
+    volumes:
+      - ../Backend/Data:/app/Data:ro
+      - ../Backend/Models:/app/Models:ro
+    expose:
+      - "8765"
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      VOXIGN_DOMAIN: "${VOXIGN_DOMAIN:?set VOXIGN_DOMAIN in Deploy/.env}"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

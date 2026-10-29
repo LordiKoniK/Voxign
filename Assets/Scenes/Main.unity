@@ -131,6 +131,7 @@ GameObject:
   - component: {fileID: 330585545}
   - component: {fileID: 330585544}
   - component: {fileID: 330585547}
+  - component: {fileID: 330585548}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -155,8 +156,8 @@ Camera:
   m_GameObject: {fileID: 330585543}
   m_Enabled: 1
   serializedVersion: 2
-  m_ClearFlags: 1
-  m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0}
+  m_ClearFlags: 2
+  m_BackGroundColor: {r: 0.23, g: 0.23, b: 0.23, a: 1}
   m_projectionMatrixMode: 1
   m_GateFitMode: 2
   m_FOVAxisMode: 0
@@ -256,6 +257,30 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!114 &330585548
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 330585543}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d7d6ded74c3e6de40bee5e4b6e4a5bd6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraOrbit
+  target: {fileID: 8031599372160722386}
+  targetOffset: {x: 0, y: 0.15, z: 0}
+  yaw: 180
+  pitch: 8
+  distance: 1.5
+  minDistance: 1
+  maxDistance: 6
+  minPitch: -20
+  maxPitch: 75
+  mouseSensitivity: 0.25
+  touchSensitivity: 0.15
+  scrollZoomSpeed: 6
 --- !u!1 &361528542
 GameObject:
   m_ObjectHideFlags: 0
@@ -1093,6 +1118,7 @@ GameObject:
   - component: {fileID: 5866666020028671529}
   - component: {fileID: 5866666020028671530}
   - component: {fileID: 5866666020028671531}
+  - component: {fileID: 5866666020028671532}
   m_Layer: 0
   m_Name: Louise
   m_TagString: Untagged
@@ -2866,7 +2892,35 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SequenceReceiver
   serverUrl: ws://127.0.0.1:8765
+  productionServerUrl: ws://192.168.1.7:8765
+  useProductionUrlOnDevice: 1
+  authToken: local-test-token
   reconnectDelay: 2
+  maxReconnectDelay: 30
+  keepAliveSeconds: 25
+  onTranscription:
+    m_PersistentCalls:
+      m_Calls: []
+--- !u!114 &5866666020028671532
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 919132147818981092}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 628cf37c5892f37449461f0db6983eb3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::VoiceAudioStreamer
+  sampleRate: 16000
+  chunkMilliseconds: 100
+  devMode: 0
+  requestPermissionOnStart: 1
+  compressAudio: 1
+  onStreamingChanged:
+    m_PersistentCalls:
+      m_Calls: []
 --- !u!4 &6085633309092058905
 Transform:
   m_ObjectHideFlags: 0

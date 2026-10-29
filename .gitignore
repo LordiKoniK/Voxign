@@ -1,16 +1,17 @@
+# Personal development environment tweaks
+.kilo/
+.venv/
+
 # Raw dataset files
 Data/
 
-# Personal development environment tweaks
-Assets/QOL/
-.kilo/
-
-
-# Temporary testing files
+# Raw sign sequence files
 test_sequence*
 
 # Environment variables
-.env
+.env*
+# Upload example env file for deployment
+!Deploy/.env.example
 
 # Python cache files
 __pycache__/

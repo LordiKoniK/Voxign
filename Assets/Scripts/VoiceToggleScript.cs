@@ -29,12 +29,18 @@ public class VoiceToggleScript : MonoBehaviour
     public bool isOn = false;
     public UnityEvent<bool> onValueChanged = new UnityEvent<bool>();
 
+    // Attach it to the audio streamer script, with auto-resolve so it still works when the streamer lives in another loaded scene
+    [Header("Voice Capture")]
+    public bool controlStreaming = true;
+    public VoiceAudioStreamer streamer;
+
     public bool IsOn { get { return isOn; } }
 
     private UnityEngine.UI.Button button;
     private RectTransform backgroundRect;
     private RectTransform slideRect;
     private Coroutine tweenCoroutine;
+    private Coroutine binder;
     private bool isInitialized;
 
     // Lifecycle functions
@@ -52,20 +58,65 @@ public class VoiceToggleScript : MonoBehaviour
 
     void OnDestroy()
     {
+        if (binder != null)
+            StopCoroutine(binder);
         if (button != null)
             button.onClick.RemoveListener(OnClick);
+        if (streamer != null)
+            streamer.onStreamingChanged.RemoveListener(OnStreamingChanged);
     }
 
     void Start()
     {
         ApplyInstant(isOn);
         isInitialized = true;
+
+        if (!controlStreaming) return;
+
+        if (streamer == null)
+            streamer = FindAnyObjectByType<VoiceAudioStreamer>();
+
+        if (streamer != null)
+            BindStreamer();
+        else
+            binder = StartCoroutine(BindStreamerWhenAvailable());
+    }
+
+    void BindStreamer()
+    {
+        streamer.onStreamingChanged.RemoveListener(OnStreamingChanged);
+        streamer.onStreamingChanged.AddListener(OnStreamingChanged);
+        streamer.SetStreaming(isOn);
+    }
+
+    IEnumerator BindStreamerWhenAvailable()
+    {
+        float deadline = Time.realtimeSinceStartup + 30f;
+        while (streamer == null && Time.realtimeSinceStartup < deadline)
+        {
+            yield return new WaitForSecondsRealtime(0.5f);
+            streamer = FindAnyObjectByType<VoiceAudioStreamer>();
+        }
+
+        binder = null;
+
+        if (streamer == null)
+        {
+            Debug.LogWarning("[VoiceToggleScript] No VoiceAudioStreamer found; streaming stays unavailable.");
+            yield break;
+        }
+
+        BindStreamer();
     }
 
     void OnEnable()
     {
-        if (isInitialized)
-            ApplyInstant(isOn);
+        if (!isInitialized) return;
+
+        ApplyInstant(isOn);
+
+        if (controlStreaming && streamer == null && binder == null)
+            binder = StartCoroutine(BindStreamerWhenAvailable());
     }
 
     void OnDisable()
@@ -75,6 +126,7 @@ public class VoiceToggleScript : MonoBehaviour
             StopCoroutine(tweenCoroutine);
             tweenCoroutine = null;
         }
+        binder = null;
     }
 
     // Assign the assets if they are not already set
@@ -130,18 +182,36 @@ public class VoiceToggleScript : MonoBehaviour
             ApplyInstant(value);
         }
 
+        if (streamer != null)
+            streamer.SetStreaming(isOn);
+
         onValueChanged.Invoke(isOn);
     }
 
+    // Allow for instantly setting the toggle value without triggering the onValueChanged event, because... (see next function)
     public void SetValueWithoutNotify(bool value)
     {
+        if (tweenCoroutine != null)
+        {
+            StopCoroutine(tweenCoroutine);
+            tweenCoroutine = null;
+        }
+
         isOn = value;
         ApplyInstant(value);
+    }
+
+    // Reflect capture state changes (e.g. permission denied) back onto the switch, updating the visual state without triggering events
+    void OnStreamingChanged(bool streaming)
+    {
+        if (isOn != streaming)
+            SetValueWithoutNotify(streaming);
     }
 
     // Transition animation 
     IEnumerator TweenTo(bool targetOn)
     {
+        EnsureReferences();
         Color bgFrom = backgroundImage != null ? backgroundImage.color : backgroundColorOff;
         Color knobFrom = knobImage != null ? knobImage.color : knobColorOff;
         float knobFromX = knobRect != null ? knobRect.anchoredPosition.x : KnobStartX;
@@ -165,6 +235,7 @@ public class VoiceToggleScript : MonoBehaviour
     // Option to apply the toggle instantly without playing the animation (in case animation transition time is set to 0)
     void ApplyInstant(bool targetOn)
     {
+        EnsureReferences();
         ApplyVisuals(
             targetOn ? backgroundColorOn : backgroundColorOff,
             targetOn ? knobColorOn : knobColorOff,
@@ -174,6 +245,11 @@ public class VoiceToggleScript : MonoBehaviour
     // Apply visual state of the toggle (background color, knob color, knob position)
     void ApplyVisuals(Color backgroundColor, Color knobColor, float knobX)
     {
+        if (backgroundRect == null && backgroundImage != null)
+            backgroundRect = backgroundImage.GetComponent<RectTransform>();
+        if (slideRect == null && knobRect != null)
+            slideRect = knobRect.parent as RectTransform;
+
         if (backgroundImage != null)
             backgroundImage.color = backgroundColor;
 
@@ -187,6 +263,15 @@ public class VoiceToggleScript : MonoBehaviour
             pos.y = 0f;
             knobRect.anchoredPosition = pos;
         }
+    }
+
+    // Resolve layout references even when ApplyInstant runs outside of Awake (e.g. from editor tooling)
+    void EnsureReferences()
+    {
+        if (backgroundRect == null && backgroundImage != null)
+            backgroundRect = backgroundImage.GetComponent<RectTransform>();
+        if (slideRect == null && knobRect != null)
+            slideRect = knobRect.parent as RectTransform;
     }
 
     // Toggle's visual properties (dimensions/position)

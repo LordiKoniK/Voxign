@@ -1,0 +1,17 @@
+services:
+  backend:
+    build: ../Backend
+    env_file:
+      - ../Backend/.env
+    environment:
+      VOXIGN_DEV_MODE: "0"
+      VOXIGN_HOST: "0.0.0.0"
+      VOXIGN_PORT: "8765"
+      VOXIGN_AUTH_TOKEN: "local-test-token"
+      VOXIGN_SEQUENCE_PATH: "/app/test_sequence.json"
+    ports:
+      - "8765:8765"
+    volumes:
+      - ../Backend/Data:/app/Data:ro
+      - ../Backend/Models:/app/Models:ro
+    restart: unless-stopped

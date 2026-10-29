@@ -3,7 +3,6 @@ import re
 import json
 import asyncio
 import websockets
-import pyaudio
 import torch
 from dotenv import load_dotenv
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
@@ -12,7 +11,7 @@ from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 load_dotenv()
 
 # Audio settings 
-FORMAT = pyaudio.paInt16
+PA_INT16 = 8
 CHANNELS = 1
 RATE = 16000
 CHUNK = 1024
@@ -20,7 +19,14 @@ CHUNK = 1024
 # T5 model directory
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Models', 't5_asl_gloss')
 
+# Deepgram streaming endpoint. The sample rate value is set as the rate the sender reports
+# because not all devices may support an exact 16 kHz capture rate
+DEEPGRAM_URL = (
+    "wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16"
+    "&sample_rate={sample_rate}&channels=1&smart_format=true"
+)
 
+# Translates transcripts to gloss using the T5-small
 class GlossTranslator:
     def __init__(self, model_dir):
         with open(os.path.join(model_dir, 'gloss_config.json'), 'r') as f:
@@ -43,61 +49,82 @@ class GlossTranslator:
         glosses = self.tokenizer.batch_decode(generated, skip_special_tokens=True)
         return " ".join(" ".join(g.upper().split()) for g in glosses)
 
-# Streams the microphone to Deepgram and awaits on_transcript(text) for every final transcript
-async def microphone_stream(on_transcript):
+
+# Main/Production path: Streams raw PCM16 audio chunks from frontend to Deepgram and awaits on_transcript(text) per final transcript
+async def stream_to_deepgram(chunks, on_transcript, sample_rate=RATE):
     api_key = os.getenv("DEEPGRAM_API_KEY")
     if not api_key:
         print("Error: DEEPGRAM_API_KEY not found in .env file.")
         return
 
     # Explicitly define parameters in the URL to avoid SDK serialization bugs
-    url = "wss://api.deepgram.com/v1/listen?model=nova-3&encoding=linear16&sample_rate=16000&channels=1&smart_format=true"
+    url = DEEPGRAM_URL.format(sample_rate=sample_rate)
     headers = {"Authorization": f"Token {api_key}"}
 
+    async with websockets.connect(url, additional_headers=headers) as ws:
+        async def sender():
+            try:
+                async for chunk in chunks:
+                    if chunk:
+                        await ws.send(chunk)
+                # Tells Deepgram the utterance is finished so it flushes the final transcript
+                await ws.send(json.dumps({"type": "CloseStream"}))
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"Sender error: {e}")
+
+        async def receiver():
+            try:
+                async for message in ws:
+                    res = json.loads(message)
+                    if res.get("type") != "Results" or not res.get("is_final", True):
+                        continue
+
+                    alts = res.get("channel", {}).get("alternatives", [])
+                    transcript = alts[0].get("transcript", "") if alts else ""
+                    if transcript:
+                        await on_transcript(transcript)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"Receiver error: {e}")
+
+        # Run both sending and receiving concurrently to minimize downtime
+        await asyncio.gather(sender(), receiver())
+
+
+# DEV_MODE path: records from the machine running the backend and forwards it to Deepgram
+async def microphone_stream(on_transcript):
+    api_key = os.getenv("DEEPGRAM_API_KEY")
+    if not api_key:
+        print("Error: DEEPGRAM_API_KEY not found in .env file.")
+        return
+
     print("Initializing microphone...")
+    import pyaudio
     p = pyaudio.PyAudio()
-    stream = p.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
-
-    print("Connecting to Deepgram ...")
     try:
-        async with websockets.connect(url, additional_headers=headers) as ws:
-            print("Microphone active. Listening... (Press Ctrl+C to stop)")
-            loop = asyncio.get_running_loop()
+        stream = p.open(format=PA_INT16, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+    except Exception as e:
+        print(f"Could not open microphone: {e}")
+        p.terminate()
+        return
 
-            # Helper functions to read, send and receive data
-            def get_audio():
-                return stream.read(CHUNK, exception_on_overflow=False)
+    print("Microphone active. Listening... (Press Ctrl+C to stop)")
+    loop = asyncio.get_running_loop()
 
-            async def sender():
-                try:
-                    while True:
-                        # Offload blocking audio read to prevent event loop freezing
-                        data = await loop.run_in_executor(None, get_audio)
-                        await ws.send(data)
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    print(f"Sender error: {e}")
+    # Helper function to read audio
+    def read_audio():
+        return stream.read(CHUNK, exception_on_overflow=False)
 
-            async def receiver():
-                try:
-                    async for message in ws:
-                        res = json.loads(message)
-                        if res.get("type") != "Results" or not res.get("is_final", True):
-                            continue
+    async def chunks():
+        while True:
+            # Offload blocking audio read to prevent event loop freezing
+            yield await loop.run_in_executor(None, read_audio)
 
-                        alts = res.get("channel", {}).get("alternatives", [])
-                        transcript = alts[0].get("transcript", "") if alts else ""
-                        if transcript:
-                            await on_transcript(transcript)
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    print(f"Receiver error: {e}")
-
-            # Run both sending and receiving concurrently to minimize downtime
-            await asyncio.gather(sender(), receiver())
-
+    try:
+        await stream_to_deepgram(chunks(), on_transcript, RATE)
     except Exception as e:
         print(f"Connection error: {e}")
     finally:
@@ -116,7 +143,7 @@ def load_translator(model_dir=MODEL_DIR):
 
 def main():
     try:
-        # Load before connecting, since Deepgram closes idle connections after a few seconds
+        # Load T5 before connecting, since Deepgram closes idle connections after a few seconds
         translator = load_translator()
     except FileNotFoundError as e:
         print(f"Error: {e}")
