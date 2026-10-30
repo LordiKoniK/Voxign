@@ -2,6 +2,10 @@
 
 Voxign is an end-to-end, real-time English → American Sign Language translator. Speech is captured on the Unity client (Android or desktop), streamed to a Python backend, transcribed with Deepgram, translated to ASL gloss by a fine-tuned T5-small model, resolved into WLASL landmark sequences, and streamed back to Unity — where the landmarks are converted to bone rotations and played on a rigged avatar.
 
+## Problem
+
+Deaf and hard-of-hearing sign language users face a persistent communication barrier in everyday settings. Text-based tools require additional literacy and typing, lip-reading is unreliable, and professional interpreters are scarce and expensive; sign-language dictionaries are reference material rather than conversation tools. Voxign addresses the one-way spoken-English-to-ASL path: a hearing speaker talks naturally into the mobile client, and the deaf user sees the corresponding signing performed on the avatar in real time.
+
 The project has two runtime modes:
 
 - **Client streaming (production)** — the Unity client captures audio; the backend processes it (`VOXIGN_DEV_MODE=0`).
@@ -73,6 +77,10 @@ Deploy/
   load_test.py             Multi-client load test
 Packages/  ProjectSettings/  Unity project configuration
 Docs/Scripts.md            Script and protocol reference
+CONTRIBUTING.md            Contribution workflow and release process
+CHANGELOG.md               Milestone and release history
+LICENSE                    Academic access and licence statement
+Docs/TASKS.md              Traceable task register
 ```
 
 ## Prerequisites
@@ -165,6 +173,27 @@ Allows you to use the built application on your actual mobile device, while a do
    ```
 4. Again, both devices must be on the same network. If the PC's IP changes (happens occasionally due to ISP behaviour), update the URL in `Sequence Receiver`.
 
+## Testing
+
+The repository does not use a hosted CI runner; the checks below are manual and reproducible.
+
+1. **Protocol, authentication and concurrency (no Deepgram cost):**
+   ```bash
+   python Deploy/load_test.py --clients 3 --seconds 10
+   ```
+   Expected: every client prints `client N: ok`; the backend logs authenticated connections.
+2. **Audio smoke test (uses Deepgram):**
+   ```bash
+   python Deploy/load_test.py --clients 1 --seconds 5 --audio
+   ```
+   Expected: the client prints `ok` and the backend opens a Deepgram session.
+3. **End-to-end:** start the local production stack and the Unity client, speak a test phrase, and confirm the transcript, gloss and avatar playback. Chapter 5 of the report records the observed sequence and its limitations.
+4. **Deployment:**
+   ```bash
+   curl -I https://<domain>/
+   ```
+   A 405 or 426 response is expected for a plain HTTP request because the endpoint is WebSocket-only. Connect the phone to `wss://<domain>/ws` and check the backend and Caddy logs with `docker compose -f Deploy/docker-compose.yml logs -f`.
+
 ## Unity project setup
 
 ### Scenes
@@ -208,6 +237,19 @@ The scene currently holds the local production-test values (`ws://<my ip address
 3. The editor script `AndroidManifestPermissions` adds `INTERNET` and `RECORD_AUDIO` to the generated manifest. It adds `usesCleartextTraffic` **only for Development builds**; release builds require `wss://` (encrypted).
 4. **Development build** → use `ws://` for LAN testing.
 5. **Release build** → use `wss://` with the deployed backend. The first launch prompts for microphone permission.
+
+## Configuration
+
+| Area | Setting | Purpose |
+|---|---|---|
+| Backend secret | `Backend/.env` -> `DEEPGRAM_API_KEY` | Server-side speech key; excluded from Git |
+| Backend runtime | `VOXIGN_DEV_MODE`, `VOXIGN_HOST`, `VOXIGN_PORT`, `VOXIGN_AUTH_TOKEN`, `VOXIGN_SEQUENCE_PATH` | Microphone mode, bind address, port, shared auth and debug JSON path |
+| Unity network | `SequenceReceiver` -> **Server Url**, **Production Server Url**, **Use Production Url On Device**, **Auth Token** | Editor versus device endpoint and authentication |
+| Unity audio | `VoiceAudioStreamer` -> **Dev Mode**, **Compress Audio**, **Sample Rate**, **Chunk Milliseconds** | Capture mode, mu-law compression, 16 kHz and 100 ms chunks |
+| Deployment | `Deploy/.env` -> `VOXIGN_DOMAIN`, `VOXIGN_AUTH_TOKEN`; `Backend/.env` | Caddy TLS domain and shared token; excluded from Git |
+| Ports | 8765 internal; 80/443 Caddy | The backend port is not published in production |
+
+The Unity fields are described in detail under Unity project setup and the deployment variables under Deployment. Never commit the `.env` files or the production token.
 
 ## Deployment — Oracle Cloud Always Free
 
@@ -365,9 +407,23 @@ Model or data updates are picked up after replacing the files and restarting the
 - Oracle Always Free includes 4 OCPU / 24 GB A1, 200 GB block storage, and 10 TB egress per month; keep the voice switch off when idle to avoid unnecessary Deepgram usage.
 - The WLASL dataset is ~8.3 GB and must be on the host; it is not baked into the image.
 
+## Repository, releases and access
+
+- **Project repository:** [https://github.com/LordiKoniK/Voxign](https://github.com/LordiKoniK/Voxign). The repository is private; supervisor and examiner access is granted by collaborator invitation.
+- **Milestones:** `v1.0.0` (production deployment, commit `f8cc4a4`) and `v0.1.0` (mobile UI, commit `72add90`). Annotated tags are present locally; publish them with `git push origin --tags`. See [CHANGELOG.md](CHANGELOG.md).
+- **Workflow:** [CONTRIBUTING.md](CONTRIBUTING.md) defines branches, pull requests, commit conventions, task updates and releases.
+- **Task record:** [Docs/TASKS.md](Docs/TASKS.md). GitHub Issues were not used; the task register is the traceable record.
+- **Historical note:** the delivered work was committed directly to `main`, including the consolidated production commit `f8cc4a4` and the remote merge `51a7715`; no feature-branch or pull-request history was retained. Future changes should use short-lived branches and pull requests.
+
+## Licence and access
+
+The repository is private and is made available for academic assessment, supervision and examination. The code, scenes and project-specific assets are all rights reserved; see [LICENSE](LICENSE). The WLASL and MuteMotion data is not redistributed, and the T5 base model, Mixamo assets, Deepgram, Unity and the other dependencies remain under their own terms. No API keys or production authentication tokens are committed; development placeholders may appear in scene configuration.
+
 ## Script reference
 
 See **[Docs/Scripts.md](Docs/Scripts.md)** for every backend and Unity script, the WebSocket protocol, configuration fields, and how the pieces fit together.
+
+Repository governance: [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGELOG.md), [Docs/TASKS.md](Docs/TASKS.md) and [LICENSE](LICENSE).
 
 ---
 

@@ -1,0 +1,14 @@
+# Licence and Access
+
+Copyright (c) 2026 Njihia Muranga. All rights reserved.
+
+This repository contains the academic project Voxign, submitted to the School of Computing and Engineering Sciences at Strathmore University. It is made available for assessment, supervision and examination by the author, the supervisor and authorised examiners. No permission is granted to copy, redistribute, sublicense, publish or use the code, scenes, project-specific assets or trained model commercially without prior written permission from the author and, where applicable, the University.
+
+Third-party components are not covered by this statement and remain subject to their own terms:
+
+- the T5 base model and tokenizer (Apache 2.0), and the fine-tuned artefact used by the project;
+- the WLASL dataset and the MuteMotion encoded landmark data, used under their published research terms; the data is not redistributed in this repository;
+- Mixamo character and animation assets, used under Adobe's terms;
+- Deepgram APIs, Unity, the Universal Render Pipeline, and the other dependencies listed in the README.
+
+The repository is private. Access for assessment is provided by collaborator invitation to the project's GitHub repository. No API keys or production authentication tokens are included in the repository; development placeholders, such as a local test token, may appear in scene configuration. Anyone preparing a public release must remove those placeholders and review the third-party terms above.
