@@ -2892,9 +2892,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SequenceReceiver
   serverUrl: ws://127.0.0.1:8765
-  productionServerUrl: ws://192.168.1.7:8765
+  productionServerUrl: wss://your-domain.example/ws
   useProductionUrlOnDevice: 1
-  authToken: local-test-token
+  authToken: 
   reconnectDelay: 2
   maxReconnectDelay: 30
   keepAliveSeconds: 25

@@ -5,6 +5,18 @@
 # Raw dataset files
 Data/
 
+# Credentials, local datasets and signing material
+.kaggle/
+kaggle.json
+access_token
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.npz
+
 # Raw sign sequence files
 test_sequence*
 

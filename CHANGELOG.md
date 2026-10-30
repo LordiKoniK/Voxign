@@ -11,7 +11,8 @@ All notable changes to Voxign are recorded here. The project follows a semantic 
 
 ### Security
 
-- The production authentication token must remain outside version control. `Assets/Scenes/Main.unity` is intentionally not included in the documentation commit while it contains the production token.
+- Removed the production authentication token and deployment endpoint from the tracked scene; the scene now uses placeholders. Supply the token locally at build time and rotate it if it was used in a build.
+- The WLASL/MuteMotion dataset (8.9 GB) and generated build outputs remain untracked; `.gitignore` covers credentials, keystores, Kaggle tokens, datasets and APKs.
 
 ### Known gaps
 

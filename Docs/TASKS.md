@@ -16,7 +16,7 @@ GitHub Issues were not configured for this repository. This register is the trac
 | T-10 | Correct the duplicate-scene, normal-map, camera and certificate issues | Defect fixes D-01 to D-04 | Done | `f8cc4a4`; Chapter 5, Table 5.4 |
 | T-11 | Produce the README, script reference, contribution guide, changelog, task register and licence | Documentation and reproducibility | Done | Repository governance change; `README.md`, `Docs/Scripts.md`, `CONTRIBUTING.md`, `CHANGELOG.md`, `LICENSE` |
 | T-12 | Run the formal fifty-phrase, latency, frame-rate, WER, intelligibility and SUS evaluations | Objective 5; NFR-01, NFR-02; DR-06 | Open | No measurements or participant data; Chapter 5, Table 5.5 |
-| T-13 | Remove the production authentication token from the tracked scene and externalise build configuration | Security and DR-05 boundary | Open | `Assets/Scenes/Main.unity` working-tree change; must not be committed |
+| T-13 | Remove the production authentication token from the tracked scene and externalise build configuration | Security and DR-05 boundary | Done | Scene sanitised with placeholders; token supplied locally at build time; rotate if used |
 | T-14 | Add a GitHub Actions workflow, Codespaces configuration and branch/PR history | Reproducibility and collaboration | Open | No `.github/workflows` or `.devcontainer`; see Chapter 3 and `CONTRIBUTING.md` |
 | T-15 | Create release milestones and annotated tags | Release history | Done | `v0.1.0` at `72add90`; `v1.0.0` at `f8cc4a4`; `CHANGELOG.md` |
 
@@ -24,4 +24,4 @@ GitHub Issues were not configured for this repository. This register is the trac
 
 - `f8cc4a4` is the consolidated production commit; `72add90` is the mobile UI milestone. Earlier commits are listed in `CHANGELOG.md`.
 - The task register is updated manually. When GitHub Issues becomes available, each task should be mirrored as an issue with the same ID and linked to its pull request.
-- T-12 and T-13 are the two open items that most affect the strength of the evaluation and the security posture of the repository.
+- T-12 and T-14 are the open items that most affect the strength of the evaluation and the reproducibility of the hosted workflow.

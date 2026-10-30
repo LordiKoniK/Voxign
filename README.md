@@ -224,7 +224,7 @@ The toggle binds to the streamer at runtime (across additive scenes), starts/sto
 
 The scene's switch is **ON** by default. On mobile that starts capture at launch (and triggers the microphone prompt). Set **Is On** off in the scene if you want the app to start silent.
 
-The scene currently holds the local production-test values (`ws://<my ip address ;)>:8765`, `local-test-token`, `devMode=false`). Replace them with your own environment's values before building; see the local and deployment sections.
+The scene's endpoint and authentication fields are placeholders. Set them locally for your environment and never commit the production token.
 
 ### Android build
 
@@ -427,4 +427,4 @@ Repository governance: [CONTRIBUTING.md](CONTRIBUTING.md), [CHANGELOG.md](CHANGE
 
 ---
 
-Voxign's current production stage is single-client deployment. Per-user authentication and additional hardening are the next planned improvements. For enquiries: [nj.muranga@gmail.com](mailto:nj.muranga@gmail.com).
+Voxign's current production stage is single-client deployment. Per-user authentication and additional hardening are the next planned improvements. For enquiries, contact the project supervisor through Strathmore University.
