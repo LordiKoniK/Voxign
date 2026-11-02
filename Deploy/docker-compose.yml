@@ -9,9 +9,11 @@ services:
       VOXIGN_PORT: "8765"
       VOXIGN_SEQUENCE_PATH: "/app/test_sequence.json"
       VOXIGN_AUTH_TOKEN: "${VOXIGN_AUTH_TOKEN:?set VOXIGN_AUTH_TOKEN in Deploy/.env}"
+      VOXIGN_METRICS_DIR: "/app/Logs"
     volumes:
       - ../Backend/Data:/app/Data:ro
       - ../Backend/Models:/app/Models:ro
+      - ../Backend/Logs:/app/Logs
     expose:
       - "8765"
     restart: unless-stopped
