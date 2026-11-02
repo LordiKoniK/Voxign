@@ -20,6 +20,10 @@ access_token
 # Raw sign sequence files
 test_sequence*
 
+# Measurement files from dev-mode testing data
+Backend/Logs/
+phrases.txt
+
 # Environment variables
 .env*
 # Upload example env file for deployment

@@ -50,17 +50,20 @@ Starts the `websockets` server on `VOXIGN_HOST:VOXIGN_PORT` (default `0.0.0.0:87
   - Runs T5 inference on a single worker thread so utterances stay ordered.
   - `on_transcript`: logs English/gloss/signs and broadcasts a sequence message with the gzipped, base64-encoded payload.
   - `run`: serves the bridge; in DEV_MODE awaits `microphone_stream`, otherwise waits for client audio.
+  - `mark_audio` records the arrival of each audio chunk so the latency row can include the ASR wait.
+  - `_record_metrics` appends one row per utterance to `Backend/Logs/latency.csv` and the transcript pair to `Backend/Logs/transcripts.jsonl`. Measurement is enabled by default only when `VOXIGN_DEV_MODE` is on.
 - **Environment**
   - `VOXIGN_HOST` (default `0.0.0.0`), `VOXIGN_PORT` (8765)
   - `VOXIGN_DEV_MODE` (1 = backend mic, 0 = client audio)
   - `VOXIGN_AUTH_TOKEN` (empty = auth disabled)
   - `VOXIGN_SEQUENCE_PATH` (debug JSON path; container default `/app/test_sequence.json`)
+  - `VOXIGN_METRICS` (default: on in DEV_MODE, off otherwise) and `VOXIGN_METRICS_DIR` (default `Backend/Logs`)
 
 ### `SpeechToGloss.py` — Deepgram + T5
 
 - **`GlossTranslator`** loads `Models/t5_asl_gloss/` (config, tokenizer, `model.safetensors`) on CPU or CUDA and translates each sentence with beam search (`gloss_config.json`).
 - **`stream_to_deepgram(chunks, on_transcript, sample_rate)`** opens the Deepgram streaming WebSocket (Nova-3, `linear16`, `smart_format`) and runs a sender/receiver pair. When the chunk iterator ends, it sends `CloseStream` so Deepgram flushes the final transcript.
-- **`microphone_stream(on_transcript)`** is the development path: opens PyAudio (lazily imported, so containers do not need PortAudio), reads 1024-sample blocks, and forwards them to Deepgram.
+- **`microphone_stream(on_transcript, on_audio=None)`** is the development path: opens PyAudio (lazily imported, so containers do not need PortAudio), reads 1024-sample blocks, and forwards them to Deepgram. `on_audio` is called per captured block so the pipeline can timestamp the latency start.
 - **`load_translator()`** validates the model directory and raises `FileNotFoundError` if it is missing.
 - The model is `google-t5/t5-small` fine-tuned over 29 epochs (242 MB `model.safetensors`); `gloss_config.json` reports BLEU 74.45, chrF 92.1, and exact-match 79.53.
 - `python SpeechToGloss.py` runs a standalone transcript → gloss test.
@@ -84,6 +87,14 @@ A small standalone script that streams the microphone to Deepgram and prints raw
 ### `MediapipeTester.py`
 
 Reads `Assets/test_sequence.json` and renders the landmark frames in [Rerun](https://rerun.io) for offline inspection. The `rerun-sdk` package includes the SDK but not the viewer GUI; place a matching viewer binary at `.venv/Scripts/rerun.exe` (Windows) or `.venv/bin/rerun` (Linux), or install it separately.
+
+### `evaluate_wer.py` — word-error evaluation
+
+Computes the word error rate of the recorded Deepgram transcripts against a reference phrase list, for functional requirement FR-02.
+
+- `python Backend/evaluate_wer.py --references phrases.txt` reads `Backend/Logs/transcripts.jsonl` (produced by a DEV_MODE run) and compares the transcripts with the phrases in spoken order.
+- Prints per-utterance substitutions, deletions, insertions and WER, the corpus WER, and a pass/fail against the 10 per cent target; `--json results.json` writes a machine-readable summary.
+- The reference file has one phrase per line; blank lines and `#` comments are ignored.
 
 ### Dependencies and image
 
@@ -134,6 +145,13 @@ Reads `Assets/test_sequence.json` and renders the landmark frames in [Rerun](htt
   - `LandmarkSequence.FromJson` supports both multi-sign and older single-sign exports.
 - **`PipelineTester`** (development)
   - Optional component that loads a `TextAsset` (or pasted JSON) and queues its signs on `SignPlayer` at startup, without the backend.
+
+### Measurement (development only)
+
+- **`DevMetrics`** (auto-added to the avatar in the editor and in development builds)
+  - Measures **last audio chunk → sequence received** (`speech_to_payload_ms`), **sequence received → first sign rendered** (`payload_to_render_ms`), the average and lowest frame rate during playback, and the outage length on each automatic reconnect.
+  - Appends rows to `dev_metrics.csv` in `Application.persistentDataPath` and logs a per-run summary; nothing is attached or compiled into a release build.
+  - The audio-to-payload figure is only produced when Unity streams audio (`VoiceAudioStreamer.devMode` off and `VOXIGN_DEV_MODE=0`); the render and frame-rate figures are produced in either mode.
 
 ### UI and presentation
 
@@ -187,6 +205,8 @@ The client reconnects automatically. The server broadcasts each sequence to **al
 | `VOXIGN_DEV_MODE` | `1` | `1` = backend microphone; `0` = Unity streams audio |
 | `VOXIGN_AUTH_TOKEN` | empty | Shared secret; empty disables auth |
 | `VOXIGN_SEQUENCE_PATH` | `Assets/test_sequence.json` | Debug JSON output; container sets `/app/test_sequence.json` |
+| `VOXIGN_METRICS` | on when `VOXIGN_DEV_MODE=1` | Writes the latency CSV and transcript log |
+| `VOXIGN_METRICS_DIR` | `Backend/Logs` | Output directory for measurement files |
 | `DEEPGRAM_API_KEY` | — | Required; loaded from `Backend/.env` |
 
 ### Unity endpoint selection
@@ -195,6 +215,15 @@ The client reconnects automatically. The server broadcasts each sequence to **al
 - Device: **Production Server Url** when **Use Production Url On Device** is on.
 - **Auth Token** is sent for both; it must match the backend when auth is enabled.
 - `VoiceAudioStreamer.devMode` must be `false` when the backend is in client-streaming mode and `true` when the backend uses its own microphone.
+
+## Measurement runs (development only)
+
+All measurements are off unless the backend runs with `VOXIGN_DEV_MODE=1` (the default) and the client is the editor or a development build.
+
+- **Latency (NFR-01, DR-06).** Start the backend, keep Unity streaming (`VOXIGN_DEV_MODE=0`, `VoiceAudioStreamer.devMode` off), speak one utterance per pause, and stop. `Backend/Logs/latency.csv` holds the stage breakdown (`audio_to_transcript_ms`, `translate_ms`, `lookup_ms`, `encode_ms`, `broadcast_ms`, `pipeline_ms`, `total_ms`) and Unity's `dev_metrics.csv` holds the render half. In backend-microphone mode the CSV still records the stages after the final transcript, but the audio-to-transcript stage is not available.
+- **Frame rate (NFR-02).** Any playback run writes the average and lowest frame rate for each utterance to `dev_metrics.csv`. On device the file is in the app's persistent data directory (`/storage/emulated/0/Android/data/<package>/files`).
+- **Reconnect (NFR-03).** Interrupt the network or stop the backend during a session; each restored connection writes the outage length as a `reconnect` row and a `[DevMetrics]` log line.
+- **Word error rate (FR-02).** Speak the reference phrases in order with the backend in DEV_MODE, then run `python Backend/evaluate_wer.py --references <file>`.
 
 ## Lifecycle summary
 

@@ -40,6 +40,9 @@ public class VoiceAudioStreamer : MonoBehaviour
     public bool IsStreaming { get; private set; }
     public bool DevMode { get { return devMode; } }
 
+    // Timestamp used for latency measurement
+    public float LastAudioSentAt { get; private set; }
+
     private SequenceReceiver receiver;
     private AudioClip clip;
     
@@ -48,6 +51,7 @@ public class VoiceAudioStreamer : MonoBehaviour
     // Sends the audio to the backend
     private Coroutine pump;
     private string deviceName;
+    private bool loggedFirstChunk;
 
     void Awake()
     {
@@ -191,6 +195,7 @@ public class VoiceAudioStreamer : MonoBehaviour
         IsStreaming = true;
         onStreamingChanged.Invoke(true);
         Debug.Log($"[VoiceAudioStreamer] Streaming microphone audio at {clip.frequency} Hz.");
+        loggedFirstChunk = false;
         starter = null;
         pump = StartCoroutine(Pump());
     }
@@ -239,15 +244,26 @@ public class VoiceAudioStreamer : MonoBehaviour
             last = (last + chunkSamples) % clipSamples;
             
             // Compress for transmission speed and send the audio chunk to the backend
+            bool sent;
             if (compressAudio)
             {
                 EncodeMuLaw(samples, mulaw);
-                receiver.SendAudio(mulaw);
+                sent = receiver.SendAudio(mulaw);
             }
             else
             {
                 EncodePcm16(samples, pcm);
-                receiver.SendAudio(pcm);
+                sent = receiver.SendAudio(pcm);
+            }
+            if (sent)
+            {
+                LastAudioSentAt = Time.realtimeSinceStartup;
+                if (!loggedFirstChunk)
+                {
+                    loggedFirstChunk = true;
+                    int bytes = compressAudio ? mulaw.Length : pcm.Length;
+                    Debug.Log($"[VoiceAudioStreamer] First audio chunk sent ({bytes} bytes, {(compressAudio ? "mulaw" : "pcm16")}).");
+                }
             }
             yield return null;
         }

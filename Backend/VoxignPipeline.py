@@ -1,11 +1,13 @@
 import asyncio
 import base64
+import csv
 import gzip
 import hmac
 import json
 import os
 import socket
 import struct
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from websockets.asyncio.server import broadcast, serve
@@ -28,6 +30,29 @@ AUTH_TOKEN = os.getenv("VOXIGN_AUTH_TOKEN", "")
 
 # Audio backlog per client before old chunks are dropped (keeps latency low on slow links)
 MAX_AUDIO_QUEUE = 64
+
+# Test instrumentation. Only active in DEV_MODE unless VOXIGN_METRICS forces it on,
+# so a production deployment never writes measurement files
+METRICS = os.getenv("VOXIGN_METRICS", "1" if DEV_MODE else "0").lower() not in ("0", "false", "no")
+
+# Per-utterance latency rows and the raw transcripts used for word-error evaluation
+METRICS_DIR = os.getenv("VOXIGN_METRICS_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "Logs"))
+LATENCY_CSV = os.path.join(METRICS_DIR, "latency.csv")
+TRANSCRIPT_LOG = os.path.join(METRICS_DIR, "transcripts.jsonl")
+
+LATENCY_FIELDS = [
+    "timestamp",
+    "english",
+    "gloss",
+    "signs",
+    "audio_to_transcript_ms",
+    "translate_ms",
+    "lookup_ms",
+    "encode_ms",
+    "broadcast_ms",
+    "pipeline_ms",
+    "total_ms",
+]
 
 # Get LAN IP address of the current machine to print it for DEV_MODE users
 def lan_addresses():
@@ -96,6 +121,10 @@ class ClientAudioSession:
             except Exception as e:
                 print(f"[Unity] Could not decode mu-law audio: {e}")
                 return
+
+        # The most recent chunk that arrived; the latency row measures from this point so the
+        # Deepgram endpointing wait is included in the total
+        self.pipeline.last_audio_at = time.perf_counter()
 
         if self.task is None:
             self.task = asyncio.create_task(self._run())
@@ -233,20 +262,41 @@ class SpeechToSignPipeline:
         self.bridge = UnityBridge(self)
         # Single worker to keep utterances in order and off the audio thread pool
         self.worker = ThreadPoolExecutor(max_workers=1)
+        # Timestamp of the last audio chunk, used as the start of the latency measurement
+        self.last_audio_at = None
+        if METRICS:
+            os.makedirs(METRICS_DIR, exist_ok=True)
+            print(f"Metrics: writing {LATENCY_CSV} and {TRANSCRIPT_LOG}.")
+
+    # Records when the most recent audio chunk arrived, so the latency row can include the ASR wait
+    def mark_audio(self):
+        self.last_audio_at = time.perf_counter()
 
     # Takes transcript from Deepgram, translate it into ASL gloss via T5, and build the landmark sequence JSON file
-    def process_transcript(self, transcript):
+    # Stage timings are filled into "timings" when measurement is enabled
+    def process_transcript(self, transcript, timings=None):
+        t_start = time.perf_counter()
         gloss = self.translator.translate(transcript)
+        t_translate = time.perf_counter()
         words = self.library.resolve_gloss(gloss)
         sequence = self.library.build_sequence(words)
+        t_lookup = time.perf_counter()
         if sequence:
             export_sequence(sequence, self.output_path)
+
+        if timings is not None:
+            timings["translate_ms"] = (t_translate - t_start) * 1000.0
+            timings["lookup_ms"] = (t_lookup - t_translate) * 1000.0
+            timings["signs"] = len(sequence["glossSequence"]) if sequence else 0
         return gloss, words, sequence
 
     # Constant loop to listen for transcripts, process them and send the update to Unity
     async def on_transcript(self, transcript):
+        t_transcript = time.perf_counter()
+        timings = {} if METRICS else None
         loop = asyncio.get_running_loop()
-        gloss, words, sequence = await loop.run_in_executor(self.worker, self.process_transcript, transcript)
+        gloss, words, sequence = await loop.run_in_executor(self.worker, self.process_transcript, transcript, timings)
+        t_processed = time.perf_counter()
 
         print(f"English:   {transcript}")
         print(f"ASL Gloss: {gloss}")
@@ -255,6 +305,7 @@ class SpeechToSignPipeline:
         if sequence:
             raw_payload = json.dumps(sequence).encode("utf-8")
             payload = base64.b64encode(gzip.compress(raw_payload, 6)).decode("ascii")
+            t_encoded = time.perf_counter()
             self.bridge.notify({
                 "type": "sequence",
                 "english": transcript,
@@ -263,6 +314,45 @@ class SpeechToSignPipeline:
                 "payload": payload,
                 "payloadEncoding": "gzip+base64",
             })
+            t_broadcast = time.perf_counter()
+            if METRICS:
+                self._record_metrics(transcript, gloss, timings, t_transcript, t_processed, t_encoded, t_broadcast)
+        elif METRICS:
+            self._record_metrics(transcript, gloss, timings, t_transcript, t_processed, t_processed, t_processed)
+
+    # Writes one latency row per utterance and appends the raw pair used by the word-error evaluation
+    def _record_metrics(self, transcript, gloss, timings, t_transcript, t_processed, t_encoded, t_broadcast):
+        audio_at = self.last_audio_at
+        audio_to_transcript = (t_transcript - audio_at) * 1000.0 if audio_at is not None else None
+        total = (t_broadcast - audio_at) * 1000.0 if audio_at is not None else None
+        row = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "english": transcript,
+            "gloss": gloss,
+            "signs": timings.get("signs", 0),
+            "audio_to_transcript_ms": "" if audio_to_transcript is None else round(audio_to_transcript, 1),
+            "translate_ms": round(timings.get("translate_ms", 0.0), 1),
+            "lookup_ms": round(timings.get("lookup_ms", 0.0), 1),
+            "encode_ms": round((t_encoded - t_processed) * 1000.0, 1),
+            "broadcast_ms": round((t_broadcast - t_encoded) * 1000.0, 1),
+            "pipeline_ms": round((t_broadcast - t_transcript) * 1000.0, 1),
+            "total_ms": "" if total is None else round(total, 1),
+        }
+
+        new_file = not os.path.exists(LATENCY_CSV)
+        try:
+            with open(LATENCY_CSV, "a", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=LATENCY_FIELDS)
+                if new_file:
+                    writer.writeheader()
+                writer.writerow(row)
+            with open(TRANSCRIPT_LOG, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"english": transcript, "gloss": gloss}) + "\n")
+        except OSError as e:
+            print(f"Metrics error: {e}")
+        print(f"Latency: total {row['total_ms']} ms (ASR {row['audio_to_transcript_ms']}, "
+              f"translate {row['translate_ms']}, lookup {row['lookup_ms']}, "
+              f"encode {row['encode_ms']}, broadcast {row['broadcast_ms']}).")
 
     async def run(self):
         async with serve(self.bridge.handler, HOST, PORT):
@@ -273,7 +363,7 @@ class SpeechToSignPipeline:
 
             if DEV_MODE:
                 print("DEV_MODE: using the backend's own microphone.")
-                await microphone_stream(self.on_transcript)
+                await microphone_stream(self.on_transcript, self.mark_audio)
             else:
                 print("DEV_MODE is off: waiting for microphone audio from Unity clients...")
                 await asyncio.Future()

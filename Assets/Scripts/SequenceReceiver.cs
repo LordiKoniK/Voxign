@@ -39,6 +39,15 @@ public class SequenceReceiver : MonoBehaviour
     [Header("Events")]
     public TranscriptionEvent onTranscription = new TranscriptionEvent();
 
+    // Testing-focused metrics
+    // Raised on the main thread when a decoded sequence is handed to the player
+    public event Action SequenceReceived;
+    // Raised on the main thread with the outage length after an interrupted connection is restored
+    public event Action<float> Reconnected;
+    // Timestamps to track time between signs/sequences
+    public float LastSequenceReceivedAt { get; private set; }
+    public string LastSequenceEnglish { get; private set; }
+
     // LIST OF DATA STRUCTURES (all corresponding to JSON format)
 
     // Data structure for messages received from the backend
@@ -78,6 +87,7 @@ public class SequenceReceiver : MonoBehaviour
     private SignPlayer player;
     private CancellationTokenSource cancellation;
     private readonly ConcurrentQueue<IncomingSequence> received = new ConcurrentQueue<IncomingSequence>();
+    private readonly ConcurrentQueue<float> reconnections = new ConcurrentQueue<float>();
     private readonly ConcurrentQueue<OutgoingFrame> outbox = new ConcurrentQueue<OutgoingFrame>();
     private readonly SemaphoreSlim outboxSignal = new SemaphoreSlim(0);
     private readonly System.Random jitter = new System.Random();
@@ -126,6 +136,16 @@ public class SequenceReceiver : MonoBehaviour
                 foreach (LandmarkSeries sign in item.sequence.signs) player.Enqueue(sign);
             }
             if (!string.IsNullOrEmpty(item.english)) onTranscription.Invoke(item.english);
+
+            LastSequenceReceivedAt = Time.realtimeSinceStartup;
+            LastSequenceEnglish = item.english;
+            SequenceReceived?.Invoke();
+        }
+
+        while (reconnections.TryDequeue(out float gapSeconds))
+        {
+            Debug.Log($"[SequenceReceiver] Reconnected after {gapSeconds:F2} s.");
+            Reconnected?.Invoke(gapSeconds);
         }
     }
 
@@ -184,7 +204,9 @@ public class SequenceReceiver : MonoBehaviour
         // Buffer to prevent losing signs as new ones come in
         byte[] buffer = new byte[4096];
         bool loggedWaiting = false;
+        bool everConnected = false;
         int failures = 0;
+        DateTime? lostAt = null;
 
         while (!token.IsCancellationRequested)
         {
@@ -201,6 +223,14 @@ public class SequenceReceiver : MonoBehaviour
                     connected = true;
                     failures = 0;
                     ClearOutbox();
+
+                    // Report how long an established connection was down; the initial attempts are not counted
+                    if (everConnected && lostAt.HasValue)
+                    {
+                        reconnections.Enqueue((float)(DateTime.UtcNow - lostAt.Value).TotalSeconds);
+                    }
+                    everConnected = true;
+                    lostAt = null;
                     Debug.Log($"[SequenceReceiver] Connected to backend at {uri}.");
                     loggedWaiting = false;
 
@@ -235,6 +265,7 @@ public class SequenceReceiver : MonoBehaviour
                 }
                 finally
                 {
+                    if (connected) lostAt = DateTime.UtcNow;
                     connected = false;
                     connection.Cancel();
                     if (sendTask != null)

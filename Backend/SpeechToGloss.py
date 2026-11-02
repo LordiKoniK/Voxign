@@ -95,7 +95,8 @@ async def stream_to_deepgram(chunks, on_transcript, sample_rate=RATE):
 
 
 # DEV_MODE path: records from the machine running the backend and forwards it to Deepgram
-async def microphone_stream(on_transcript):
+# on_audio, when supplied, is called for every captured chunk so the caller can timestamp latency
+async def microphone_stream(on_transcript, on_audio=None):
     api_key = os.getenv("DEEPGRAM_API_KEY")
     if not api_key:
         print("Error: DEEPGRAM_API_KEY not found in .env file.")
@@ -121,7 +122,10 @@ async def microphone_stream(on_transcript):
     async def chunks():
         while True:
             # Offload blocking audio read to prevent event loop freezing
-            yield await loop.run_in_executor(None, read_audio)
+            chunk = await loop.run_in_executor(None, read_audio)
+            if on_audio is not None:
+                on_audio()
+            yield chunk
 
     try:
         await stream_to_deepgram(chunks(), on_transcript, RATE)
