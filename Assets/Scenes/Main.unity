@@ -2892,9 +2892,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SequenceReceiver
   serverUrl: ws://127.0.0.1:8765
-  productionServerUrl: wss://your-domain.example/ws
-  useProductionUrlOnDevice: 1
-  authToken: 
+  productionServerUrl: wss://voxign.allisons.org/ws
+  useProductionUrlOnDevice: 0
+  authToken: 1voxignprodtest
   reconnectDelay: 2
   maxReconnectDelay: 30
   keepAliveSeconds: 25
@@ -2915,7 +2915,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::VoiceAudioStreamer
   sampleRate: 16000
   chunkMilliseconds: 100
-  devMode: 0
+  devMode: 1
   requestPermissionOnStart: 1
   compressAudio: 1
   onStreamingChanged:

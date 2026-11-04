@@ -84,7 +84,13 @@ async def stream_to_deepgram(chunks, on_transcript, sample_rate=RATE):
                     alts = res.get("channel", {}).get("alternatives", [])
                     transcript = alts[0].get("transcript", "") if alts else ""
                     if transcript:
-                        await on_transcript(transcript)
+                        # Audio processed after the last word is the endpointing plus recognition wait;
+                        # it is the closest available estimate of how long the user waited after speaking
+                        words = alts[0].get("words") or []
+                        last_end = max((w.get("end", 0.0) for w in words), default=None)
+                        audible_end = float(res.get("start") or 0.0) + float(res.get("duration") or 0.0)
+                        trailing = max(0.0, audible_end - last_end) if last_end is not None else None
+                        await on_transcript(transcript, trailing)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
@@ -95,8 +101,7 @@ async def stream_to_deepgram(chunks, on_transcript, sample_rate=RATE):
 
 
 # DEV_MODE path: records from the machine running the backend and forwards it to Deepgram
-# on_audio, when supplied, is called for every captured chunk so the caller can timestamp latency
-async def microphone_stream(on_transcript, on_audio=None):
+async def microphone_stream(on_transcript):
     api_key = os.getenv("DEEPGRAM_API_KEY")
     if not api_key:
         print("Error: DEEPGRAM_API_KEY not found in .env file.")
@@ -122,10 +127,7 @@ async def microphone_stream(on_transcript, on_audio=None):
     async def chunks():
         while True:
             # Offload blocking audio read to prevent event loop freezing
-            chunk = await loop.run_in_executor(None, read_audio)
-            if on_audio is not None:
-                on_audio()
-            yield chunk
+            yield await loop.run_in_executor(None, read_audio)
 
     try:
         await stream_to_deepgram(chunks(), on_transcript, RATE)
@@ -153,7 +155,7 @@ def main():
         print(f"Error: {e}")
         return
 
-    async def print_translation(transcript):
+    async def print_translation(transcript, trailing=None):
         # Run inference off of the main event loop so audio keeps streaming
         gloss = await asyncio.get_running_loop().run_in_executor(None, translator.translate, transcript)
         print(f"English:   {transcript}")

@@ -45,7 +45,7 @@ LATENCY_FIELDS = [
     "english",
     "gloss",
     "signs",
-    "audio_to_transcript_ms",
+    "asr_ms",
     "translate_ms",
     "lookup_ms",
     "encode_ms",
@@ -121,10 +121,6 @@ class ClientAudioSession:
             except Exception as e:
                 print(f"[Unity] Could not decode mu-law audio: {e}")
                 return
-
-        # The most recent chunk that arrived; the latency row measures from this point so the
-        # Deepgram endpointing wait is included in the total
-        self.pipeline.last_audio_at = time.perf_counter()
 
         if self.task is None:
             self.task = asyncio.create_task(self._run())
@@ -262,15 +258,9 @@ class SpeechToSignPipeline:
         self.bridge = UnityBridge(self)
         # Single worker to keep utterances in order and off the audio thread pool
         self.worker = ThreadPoolExecutor(max_workers=1)
-        # Timestamp of the last audio chunk, used as the start of the latency measurement
-        self.last_audio_at = None
         if METRICS:
             os.makedirs(METRICS_DIR, exist_ok=True)
             print(f"Metrics: writing {LATENCY_CSV} and {TRANSCRIPT_LOG}.")
-
-    # Records when the most recent audio chunk arrived, so the latency row can include the ASR wait
-    def mark_audio(self):
-        self.last_audio_at = time.perf_counter()
 
     # Takes transcript from Deepgram, translate it into ASL gloss via T5, and build the landmark sequence JSON file
     # Stage timings are filled into "timings" when measurement is enabled
@@ -291,7 +281,8 @@ class SpeechToSignPipeline:
         return gloss, words, sequence
 
     # Constant loop to listen for transcripts, process them and send the update to Unity
-    async def on_transcript(self, transcript):
+    # trailing is the audio processed after the last word, which estimates how long the user waited
+    async def on_transcript(self, transcript, trailing=None):
         t_transcript = time.perf_counter()
         timings = {} if METRICS else None
         loop = asyncio.get_running_loop()
@@ -316,27 +307,26 @@ class SpeechToSignPipeline:
             })
             t_broadcast = time.perf_counter()
             if METRICS:
-                self._record_metrics(transcript, gloss, timings, t_transcript, t_processed, t_encoded, t_broadcast)
+                self._record_metrics(transcript, gloss, timings, trailing, t_transcript, t_processed, t_encoded, t_broadcast)
         elif METRICS:
-            self._record_metrics(transcript, gloss, timings, t_transcript, t_processed, t_processed, t_processed)
+            self._record_metrics(transcript, gloss, timings, trailing, t_transcript, t_processed, t_processed, t_processed)
 
     # Writes one latency row per utterance and appends the raw pair used by the word-error evaluation
-    def _record_metrics(self, transcript, gloss, timings, t_transcript, t_processed, t_encoded, t_broadcast):
-        audio_at = self.last_audio_at
-        audio_to_transcript = (t_transcript - audio_at) * 1000.0 if audio_at is not None else None
-        total = (t_broadcast - audio_at) * 1000.0 if audio_at is not None else None
+    def _record_metrics(self, transcript, gloss, timings, trailing, t_transcript, t_processed, t_encoded, t_broadcast):
+        pipeline_ms = (t_broadcast - t_transcript) * 1000.0
+        asr_ms = trailing * 1000.0 if trailing is not None else None
         row = {
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "english": transcript,
             "gloss": gloss,
             "signs": timings.get("signs", 0),
-            "audio_to_transcript_ms": "" if audio_to_transcript is None else round(audio_to_transcript, 1),
+            "asr_ms": "" if asr_ms is None else round(asr_ms, 1),
             "translate_ms": round(timings.get("translate_ms", 0.0), 1),
             "lookup_ms": round(timings.get("lookup_ms", 0.0), 1),
             "encode_ms": round((t_encoded - t_processed) * 1000.0, 1),
             "broadcast_ms": round((t_broadcast - t_encoded) * 1000.0, 1),
-            "pipeline_ms": round((t_broadcast - t_transcript) * 1000.0, 1),
-            "total_ms": "" if total is None else round(total, 1),
+            "pipeline_ms": round(pipeline_ms, 1),
+            "total_ms": "" if asr_ms is None else round(asr_ms + pipeline_ms, 1),
         }
 
         new_file = not os.path.exists(LATENCY_CSV)
@@ -350,7 +340,7 @@ class SpeechToSignPipeline:
                 f.write(json.dumps({"english": transcript, "gloss": gloss}) + "\n")
         except OSError as e:
             print(f"Metrics error: {e}")
-        print(f"Latency: total {row['total_ms']} ms (ASR {row['audio_to_transcript_ms']}, "
+        print(f"Latency: total {row['total_ms']} ms (ASR {row['asr_ms']}, "
               f"translate {row['translate_ms']}, lookup {row['lookup_ms']}, "
               f"encode {row['encode_ms']}, broadcast {row['broadcast_ms']}).")
 
@@ -363,7 +353,7 @@ class SpeechToSignPipeline:
 
             if DEV_MODE:
                 print("DEV_MODE: using the backend's own microphone.")
-                await microphone_stream(self.on_transcript, self.mark_audio)
+                await microphone_stream(self.on_transcript)
             else:
                 print("DEV_MODE is off: waiting for microphone audio from Unity clients...")
                 await asyncio.Future()

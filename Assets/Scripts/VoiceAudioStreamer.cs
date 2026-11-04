@@ -40,9 +40,6 @@ public class VoiceAudioStreamer : MonoBehaviour
     public bool IsStreaming { get; private set; }
     public bool DevMode { get { return devMode; } }
 
-    // Timestamp used for latency measurement
-    public float LastAudioSentAt { get; private set; }
-
     private SequenceReceiver receiver;
     private AudioClip clip;
     
@@ -257,7 +254,6 @@ public class VoiceAudioStreamer : MonoBehaviour
             }
             if (sent)
             {
-                LastAudioSentAt = Time.realtimeSinceStartup;
                 if (!loggedFirstChunk)
                 {
                     loggedFirstChunk = true;
