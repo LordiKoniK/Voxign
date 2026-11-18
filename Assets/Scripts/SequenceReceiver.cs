@@ -48,6 +48,9 @@ public class SequenceReceiver : MonoBehaviour
     public float LastSequenceReceivedAt { get; private set; }
     public string LastSequenceEnglish { get; private set; }
 
+    // Identifier for this run's conversation; generated once and reused across reconnects
+    public string SessionKey { get { return sessionKey; } }
+
     // LIST OF DATA STRUCTURES (all corresponding to JSON format)
 
     // Data structure for messages received from the backend
@@ -55,6 +58,10 @@ public class SequenceReceiver : MonoBehaviour
     private class BackendMessage
     {
         public string type;
+        public string sessionKey;
+        public int utterance;
+        public bool resumed;
+        public int ttlSeconds;
         public string english;
         public string gloss;
         public string payload;
@@ -68,6 +75,7 @@ public class SequenceReceiver : MonoBehaviour
         public string type;
         public string client;
         public string token;
+        public string sessionKey;
     }
 
     // Data structure for sequences received from the backend's payload
@@ -92,8 +100,20 @@ public class SequenceReceiver : MonoBehaviour
     private readonly SemaphoreSlim outboxSignal = new SemaphoreSlim(0);
     private readonly System.Random jitter = new System.Random();
     private volatile bool connected;
+    private string sessionKey;
+    private bool shutdownStarted;
+    private static string processSessionKey;
 
     public bool IsConnected { get { return connected; } }
+
+    void Awake()
+    {
+        // One key per app launch: static for the life of the process, then discarded with it.
+        // It is never written to disk, so the next launch always starts a clean session.
+        if (string.IsNullOrEmpty(processSessionKey))
+            processSessionKey = Guid.NewGuid().ToString("N");
+        sessionKey = processSessionKey;
+    }
 
     void Start()
     {
@@ -108,7 +128,7 @@ public class SequenceReceiver : MonoBehaviour
             return;
         }
 
-        Debug.Log($"[SequenceReceiver] Using backend {uri} (device={Application.isMobilePlatform}).");
+        Debug.Log($"[SequenceReceiver] Using backend {uri} (device={Application.isMobilePlatform}), session {ShortKey}.");
 
         // Unity APIs must be read on the main thread, so these values must be captured here first before going to the background
         string sequencePath = Path.Combine(Application.dataPath, "test_sequence.json");
@@ -133,7 +153,9 @@ public class SequenceReceiver : MonoBehaviour
         {
             if (item.sequence != null)
             {
-                foreach (LandmarkSeries sign in item.sequence.signs) player.Enqueue(sign);
+                // The transcript rides with the first sign so the UI can stay in step with playback
+                for (int i = 0; i < item.sequence.signs.Count; i++)
+                    player.Enqueue(item.sequence.signs[i], i == 0 ? item.english : null);
             }
             if (!string.IsNullOrEmpty(item.english)) onTranscription.Invoke(item.english);
 
@@ -151,9 +173,35 @@ public class SequenceReceiver : MonoBehaviour
 
     void OnDestroy()
     {
-        cancellation?.Cancel();
-        cancellation?.Dispose();
+        EndSession();
+        if (cancellation != null)
+        {
+            // Give the queued session_end a moment to leave before stopping the connection
+            if (shutdownStarted) cancellation.CancelAfter(400);
+            else cancellation.Cancel();
+        }
         cancellation = null;
+    }
+
+    void OnApplicationQuit()
+    {
+        EndSession();
+    }
+
+    // Tells the backend this run is over so the session key is released immediately
+    private void EndSession()
+    {
+        if (shutdownStarted) return;
+        shutdownStarted = true;
+
+        if (SendControl("{\"type\":\"session_end\"}"))
+            Debug.Log($"[SequenceReceiver] Ending session {ShortKey}.");
+    }
+
+    // Short form used in logs; the full key is only sent to the backend
+    private string ShortKey
+    {
+        get { return string.IsNullOrEmpty(sessionKey) ? "unknown" : sessionKey.Substring(0, Math.Min(8, sessionKey.Length)); }
     }
 
     // Queues a PCM16 audio chunk for the backend (WebSocket)
@@ -192,9 +240,15 @@ public class SequenceReceiver : MonoBehaviour
     }
 
     // Build the handshake message to initiate connection with backend
-    private static byte[] BuildHello(string token)
+    private static byte[] BuildHello(string token, string key)
     {
-        HelloMessage hello = new HelloMessage { type = "hello", client = "unity", token = token ?? string.Empty };
+        HelloMessage hello = new HelloMessage
+        {
+            type = "hello",
+            client = "unity",
+            token = token ?? string.Empty,
+            sessionKey = key ?? string.Empty,
+        };
         return Encoding.UTF8.GetBytes(JsonUtility.ToJson(hello));
     }
 
@@ -234,7 +288,7 @@ public class SequenceReceiver : MonoBehaviour
                     Debug.Log($"[SequenceReceiver] Connected to backend at {uri}.");
                     loggedWaiting = false;
 
-                    await ws.SendAsync(new ArraySegment<byte>(BuildHello(authToken)), WebSocketMessageType.Text, true, connection.Token);
+                    await ws.SendAsync(new ArraySegment<byte>(BuildHello(authToken, sessionKey)), WebSocketMessageType.Text, true, connection.Token);
                     sendTask = SendLoop(ws, connection.Token);
 
                     // Constantly listen for new messages (transcripts and landmark sequences) and handle them
@@ -351,10 +405,18 @@ public class SequenceReceiver : MonoBehaviour
     private void HandleMessage(string message, string sequencePath)
     {
         BackendMessage notification = JsonUtility.FromJson<BackendMessage>(message);
+        if (notification == null) return;
+
+        // The server confirms the session key after the handshake
+        if (notification.type == "session")
+        {
+            Debug.Log($"[SequenceReceiver] Session {ShortKey} accepted (resumed={notification.resumed}, ttl={notification.ttlSeconds}s).");
+            return;
+        }
 
         // Remote clients receive the landmark data in the JSON payload
         // DEV_MODE clients simply get a notification of the updated file (type != sequence) since everything is local
-        if (notification == null || notification.type != "sequence") return;
+        if (notification.type != "sequence") return;
 
         // If the notif type is a sequence, decode it to get the Landmarks
         LandmarkSequence sequence = DecodeSequence(notification.payload, notification.payloadEncoding);

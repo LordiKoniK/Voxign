@@ -48,7 +48,7 @@ flowchart LR
 1. The client opens a WebSocket and sends a handshake message `hello` (with an optional auth token), then `audio_config`, then binary audio frames.
 2. The backend decodes μ-law (compressed) audio frames, forwards PCM16 to Deepgram, and receives final transcripts.
 3. Transcripts are translated to gloss, resolved against WLASL, and built into a landmark sequence.
-4. The sequence JSON is gzipped, base64-encoded, and broadcast to all connected clients (yet to implement proper automated session token handling).
+4. The sequence JSON is gzipped, base64-encoded, and sent back to the session that produced it. Each client generates a session key at launch, the server keeps it for five minutes after a disconnect, and the app releases it on shutdown.
 5. Unity decodes the payload, queues each sign, and plays it on the avatar. The transcript panel and the current-sign chip update in sync.
 
 Detailed protocol messages, script responsibilities, and configuration references are explained in **[Scripts.md](Docs/Scripts.md)**.
@@ -402,7 +402,7 @@ Model or data updates are picked up after replacing the files and restarting the
 ### Design notes and limits
 
 - Audio uses **G.711 μ-law** (2× less bandwidth, lossless enough for STT). The landmark payload is **gzip + base64** (~2.4× smaller for a typical sequence). Opus remains a future upgrade if more audio compression is needed.
-- The backend runs a **single T5 worker** to keep utterances ordered; concurrent clients share it. Deepgram sessions are per client.
+- The backend runs a **single T5 worker** by default to keep inference ordered; each session's transcripts are processed in order, so concurrent clients are served by organised succession. Deepgram sessions are per connection. Raise `VOXIGN_T5_WORKERS` only when more CPU is available.
 - A **single long-lived process** is required (WebSocket + loaded models). Serverless/Lambda is not a good fit.
 - Oracle Always Free includes 4 OCPU / 24 GB A1, 200 GB block storage, and 10 TB egress per month; keep the voice switch off when idle to avoid unnecessary Deepgram usage.
 - The WLASL dataset is ~8.3 GB and must be on the host; it is not baked into the image.

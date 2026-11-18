@@ -10,6 +10,8 @@ services:
       VOXIGN_SEQUENCE_PATH: "/app/test_sequence.json"
       VOXIGN_AUTH_TOKEN: "${VOXIGN_AUTH_TOKEN:?set VOXIGN_AUTH_TOKEN in Deploy/.env}"
       VOXIGN_METRICS_DIR: "/app/Logs"
+      VOXIGN_SESSION_TTL: "300"
+      VOXIGN_T5_WORKERS: "1"
     volumes:
       - ../Backend/Data:/app/Data:ro
       - ../Backend/Models:/app/Models:ro

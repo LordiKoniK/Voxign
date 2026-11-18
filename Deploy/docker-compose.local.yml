@@ -9,6 +9,8 @@ services:
       VOXIGN_PORT: "8765"
       VOXIGN_AUTH_TOKEN: "local-test-token"
       VOXIGN_SEQUENCE_PATH: "/app/test_sequence.json"
+      VOXIGN_SESSION_TTL: "300"
+      VOXIGN_T5_WORKERS: "1"
     ports:
       - "8765:8765"
     volumes:

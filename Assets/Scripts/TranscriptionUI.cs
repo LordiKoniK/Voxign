@@ -11,7 +11,6 @@ public class TranscriptionUI : MonoBehaviour
     [SerializeField] private TMP_Text signText;
     [SerializeField] private string placeholder = "[Recognised input text]";
 
-    private SequenceReceiver receiver;
     private SignPlayer player;
     private bool bound;
 
@@ -24,27 +23,27 @@ public class TranscriptionUI : MonoBehaviour
         StartCoroutine(BindWhenAvailable());
     }
 
-    // Binds the UI to the SequenceReceiver and SignPlayer once they are available
+    // Binds the UI to the SignPlayer once the avatar scene has loaded
     IEnumerator BindWhenAvailable()
     {
         float deadline = Time.realtimeSinceStartup + 30f;
 
-        while (receiver == null || player == null)
+        while (player == null)
         {
-            if (receiver == null) receiver = FindAnyObjectByType<SequenceReceiver>();
-            if (player == null) player = FindAnyObjectByType<SignPlayer>();
+            player = FindAnyObjectByType<SignPlayer>();
 
-            if (receiver != null && player != null) break;
+            if (player != null) break;
             if (Time.realtimeSinceStartup >= deadline)
             {
-                Debug.LogWarning("[TranscriptionUI] No SequenceReceiver/SignPlayer found; transcript display stays inactive.");
+                Debug.LogWarning("[TranscriptionUI] No SignPlayer found; transcript display stays inactive.");
                 yield break;
             }
 
             yield return new WaitForSecondsRealtime(0.5f);
         }
 
-        receiver.onTranscription.AddListener(SetTranscript);
+        // Both the transcript and the sign label follow playback, so the text matches what is being signed
+        player.UtteranceStarted += SetTranscript;
         player.SignStarted += SetSign;
         bound = true;
     }
@@ -72,9 +71,10 @@ public class TranscriptionUI : MonoBehaviour
 
     void OnDestroy()
     {
-        if (receiver != null)
-            receiver.onTranscription.RemoveListener(SetTranscript);
         if (player != null)
+        {
+            player.UtteranceStarted -= SetTranscript;
             player.SignStarted -= SetSign;
+        }
     }
 }

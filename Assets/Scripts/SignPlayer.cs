@@ -14,13 +14,23 @@ public class SignPlayer : MonoBehaviour
     private IKSolver solver;
     private AnimationController controller;
 
-    // Sign queue from PipelineTester
-    private readonly Queue<LandmarkSeries> queue = new Queue<LandmarkSeries>();
+    // One queued sign plus the transcript of the utterance it belongs to (only set on the first sign)
+    private struct QueuedSign
+    {
+        public LandmarkSeries series;
+        public string transcript;
+    }
+
+    // Sign queue from SequenceReceiver or PipelineTester
+    private readonly Queue<QueuedSign> queue = new Queue<QueuedSign>();
     private Coroutine playback;
 
     public bool IsPlaying => playback != null;
 
     public event Action<string> SignStarted;
+
+    // Raised when the first sign of an utterance starts, so text displays can follow playback
+    public event Action<string> UtteranceStarted;
 
     // Unity lifecycle initialization method
     void Awake()
@@ -34,9 +44,15 @@ public class SignPlayer : MonoBehaviour
     // Queue up a new sign for playback
     public void Enqueue(LandmarkSeries series)
     {
+        Enqueue(series, null);
+    }
+
+    // Queue a sign and, on the first sign of an utterance, the transcript that produced it
+    public void Enqueue(LandmarkSeries series, string transcript)
+    {
         if (series == null || series.frames == null || series.frames.Count == 0) return;
 
-        queue.Enqueue(series);
+        queue.Enqueue(new QueuedSign { series = series, transcript = transcript });
         if (playback == null) playback = StartCoroutine(PlayQueue());
     }
 
@@ -47,7 +63,8 @@ public class SignPlayer : MonoBehaviour
 
         while (queue.Count > 0)
         {
-            LandmarkSeries series = queue.Dequeue();
+            QueuedSign next = queue.Dequeue();
+            LandmarkSeries series = next.series;
             mapper.Initialize(series.aspectRatio);
 
             // Release hands that are not used in this sign (stops them from freezing wherever the last sign left them)
@@ -60,6 +77,9 @@ public class SignPlayer : MonoBehaviour
             yield return new WaitForSeconds(transitionDuration);
 
             Debug.Log($"[SignPlayer] Playing '{series.glossLabel}' ({series.frames.Count} frames).");
+
+            // Announce the utterance on its first sign so the transcript changes with the avatar, not with the network
+            if (!string.IsNullOrEmpty(next.transcript)) UtteranceStarted?.Invoke(next.transcript);
             SignStarted?.Invoke(series.glossLabel);
             yield return PlayFrames(series);
         }

@@ -8,6 +8,14 @@ All notable changes to Voxign are recorded here. The project follows a semantic 
 
 - Repository governance documentation: the README now covers the problem, configuration, testing, releases and access; `CONTRIBUTING.md`, `CHANGELOG.md`, `Docs/TASKS.md` and `LICENSE` record the workflow, release history, task register and access terms.
 - Annotated release tags `v0.1.0` and `v1.0.0` (local until pushed).
+- Multi-client sessions: the app generates a `sessionKey` at launch, the backend routes each sequence to that session only, reuses the key when the client reconnects, and releases it on `session_end` or after five minutes of inactivity.
+- Per-session utterance numbering in the sequence message and in `Backend/Logs/latency.csv`.
+- `VOXIGN_SESSION_TTL`, `VOXIGN_SESSION_SWEEP`, `VOXIGN_MAX_SESSIONS` and `VOXIGN_T5_WORKERS` configuration.
+
+### Changed
+
+- The backend no longer broadcasts sequences to every connected client; each result is delivered to the session that produced it.
+- The shared debug sequence file is written only in DEV_MODE, since it cannot represent several clients at once.
 
 ### Security
 
