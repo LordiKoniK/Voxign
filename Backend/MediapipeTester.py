@@ -1,24 +1,92 @@
-import rerun as rr
-import rerun
 import json
-import numpy as np
 import os
+import shutil
+import sys
 from pathlib import Path
+
+import numpy as np
 
 # Script for visualizing MediaPipe landmark data using the Rerun library
 # Used during testing/development to verify the data being streamed to the Unity avatar
 
-# Locate the Rerun Viewer executable bundled with rerun-sdk in the venv.
-# The rerun binary lives in .venv/Scripts/rerun.exe (Windows) or
-# .venv/bin/rerun (Linux) relative to the project root (two dirs up).
-_rerun_exe = Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "rerun.exe"
-if not _rerun_exe.exists():
-    _rerun_exe = Path(__file__).resolve().parents[2] / ".venv" / "bin" / "rerun"
+APP_ID = "MediaPipe_Visualizer"
 
-# Initialize the recording, then explicitly spawn the viewer with the
-# resolved executable path so we don't depend on PATH lookup.
-rr.init("MediaPipe_Visualizer")
-rerun.spawn(executable_path=str(_rerun_exe) if _rerun_exe.exists() else None)
+
+# Both 'rerun' (an unrelated file-change detector) and 'rerun-sdk' install a top-level
+# module called 'rerun'. When both are present the non-SDK one can shadow the SDK,
+# which produces "module 'rerun' has no attribute 'init'". Validate before using it.
+def import_rerun():
+    import importlib.metadata as metadata
+
+    import rerun as rr
+
+    required = ("init", "log", "set_time")
+    missing = [name for name in required if not hasattr(rr, name)]
+    if not missing:
+        return rr
+
+    try:
+        wrong_version = metadata.version("rerun")
+    except metadata.PackageNotFoundError:
+        wrong_version = "not installed"
+
+    raise SystemExit(
+        "The 'rerun' module that was imported is not the Rerun SDK.\n"
+        f"  imported from: {getattr(rr, '__file__', 'unknown')}\n"
+        f"  PyPI package 'rerun' version: {wrong_version}\n\n"
+        "This is the unrelated 'rerun' file-change detector shadowing 'rerun-sdk'.\n"
+        "Repair the interpreter that runs this script (both packages share files, so remove both):\n"
+        f'  "{sys.executable}" -m pip uninstall -y rerun rerun-sdk\n'
+        f'  "{sys.executable}" -m pip install -U "rerun-sdk>=0.20"\n'
+        "Then run this script again."
+    )
+
+
+rr = import_rerun()
+
+
+def find_viewer_executable():
+    """Locates the bundled viewer: next to the interpreter, in a nearby .venv, or on PATH."""
+    exe_name = "rerun.exe" if os.name == "nt" else "rerun"
+
+    candidate = Path(sys.executable).with_name(exe_name)
+    if candidate.exists():
+        return candidate
+
+    for parent in Path(__file__).resolve().parents:
+        folder = "Scripts" if os.name == "nt" else "bin"
+        candidate = parent / ".venv" / folder / exe_name
+        if candidate.exists():
+            return candidate
+
+    found = shutil.which("rerun")
+    return Path(found) if found else None
+
+
+def start_viewer():
+    """Spawns the viewer with whichever API the installed SDK version provides."""
+    # SDK 0.16+ can spawn directly from init
+    try:
+        rr.init(APP_ID, spawn=True)
+        return
+    except (TypeError, RuntimeError):
+        pass
+
+    # Older SDKs: initialise, then spawn separately
+    rr.init(APP_ID)
+    spawn = getattr(rr, "spawn", None)
+    if spawn is None:
+        print("Rerun initialised. Open the viewer manually if it did not appear.")
+        return
+
+    executable = find_viewer_executable()
+    try:
+        spawn(executable_path=str(executable) if executable else None)
+    except TypeError:
+        spawn()
+
+
+start_viewer()
 
 # Create edges between hand joints for visualization
 HAND_CHAINS = [[0, 1, 2, 3, 4], [0, 5, 6, 7, 8], [0, 9, 10, 11, 12], [0, 13, 14, 15, 16], [0, 17, 18, 19, 20], [5, 9, 13, 17]]
